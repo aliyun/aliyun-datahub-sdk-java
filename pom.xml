@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xmlns="http://maven.apache.org/POM/4.0.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-      <groupId>org.sonatype.oss</groupId>
-      <artifactId>oss-parent</artifactId>
-      <version>7</version>
+        <groupId>org.sonatype.oss</groupId>
+        <artifactId>oss-parent</artifactId>
+        <version>7</version>
     </parent>
 
     <scm>
@@ -18,12 +17,16 @@
     </scm>
 
     <groupId>com.aliyun.datahub</groupId>
-    <artifactId>datahub</artifactId>
-    <version>2.9.4-public</version>
+    <artifactId>datahub-sdk-java</artifactId>
     <packaging>pom</packaging>
+    <version>2.12.2-public</version>
     <name>datahub-sdk-java</name>
     <description>Aliyun Datahub SDK for Java Used for accessing Datahub service</description>
     <url>http://www.github.com/aliyun/aliyun-datahub-java-sdk</url>
+
+    <modules>
+        <module>datahub-sdk-public</module>
+    </modules>
 
     <distributionManagement>
         <snapshotRepository>
@@ -49,36 +52,6 @@
         </license>
     </licenses>
 
-    <modules>
-        <module>datahub-sdk</module>
-    </modules>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.testng</groupId>
-            <artifactId>testng</artifactId>
-            <version>6.9.6</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <artifactId>guava</artifactId>
-                    <groupId>com.google.guava</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.uncommons</groupId>
-            <artifactId>reportng</artifactId>
-            <version>1.1.2</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.testng</groupId>
-                    <artifactId>testng</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-    </dependencies>
 
     <build>
         <plugins>
@@ -86,15 +59,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.0.0</version>
-	    </plugin>
+            </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.1</version>
+                <version>3.5.1</version>
                 <configuration>
-                    <source>1.6</source>
-                    <target>1.6</target>
+                    <source>1.7</source>
+                    <target>1.7</target>
                     <encoding>UTF-8</encoding>
                     <optimize>true</optimize>
                     <debug>true</debug>
@@ -122,7 +95,7 @@
                     <execution>
                         <id>attach-sources</id>
                         <goals>
-                          <goal>jar</goal>
+                            <goal>jar</goal>
                         </goals>
                     </execution>
                 </executions>
@@ -223,4 +196,5 @@
             </resource>
         </resources>
     </build>
+
 </project>

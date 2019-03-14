@@ -19,7 +19,7 @@
     <dependency>
         <groupId>com.aliyun.datahub</groupId>
         <artifactId>aliyun-sdk-datahub</artifactId>
-        <version>2.9.4-public</version>
+        <version>2.12.2</version>
     </dependency>
 
 ### Endpoint
@@ -41,15 +41,25 @@
 
 ### DataHub Usage
 
+| variable | detail |
+| ---- | ---- |
+| DATAHUB_ENDPOINT | DataHub service endpoint |
+| PROJECT_NAME | Project name |
+| TOPIC_NAME | Topic name |
+| SHARD_ID | Shard id |
+| ACESS_ID | Your access id |
+| ACCESS_KEY | Your access key |
+
 ##### 1. Create Project
 
     DataHub is now on public testing, please contact us for creating projects.
 
 ##### 2. Initialize
 
-    Account account = new AliyunAccount("your access id", "your access key");
-    DatahubConfiguration conf = new DatahubConfiguration(account, "datahub endpoint");
-    DatahubClient client = new DatahubClient(conf);
+    DatahubClient client = DatahubClientBuilder.newBuilder()
+        .setDatahubConfig(
+            new DatahubConfig(DATAHUB_ENDPOINT, new AliyunAccount(ACESS_ID, ACCESS_KEY))
+    ).build();
 
 ##### 3. CreateTopic
 
@@ -60,27 +70,44 @@
     schema.addField(new Field("field1", FieldType.BIGINT));
     schema.addField(new Field("field2", FieldType.String));
     String comment = "The first topic";
-    client.createTopic(projectName, topicName, shardCount, lifecycle, type, schema, comment);
+    client.createTopic(PROJECT_NAME, TOPIC_NAME, shardCount, lifecycle, type, schema, comment);
 
 ##### 4. PutRecords
-    // construct the records to be upload
-    RecordSchema schema = client.getTopic("projectName", "topicName").getRecordSchema();
-    List<RecordEntry> recordEntries = new ArrayList<~>();
-    RecordEntry entry = new RecordEntry(schema);
-    entry.setBigint(0, 123456);
-    entry.setString(1, "string");
-    entry.setShardId("shardId");
+    // construct record schema
+    RecordSchema schema = new RecordSchema();
+    schema.addField(new Field("field1", FieldType.STRING));
+    schema.addField(new Field("field2", FieldType.BIGINT));
 
-    entry.putAttribute("attr_id", "2902381718"); //Attribute is the optional value for the record
-    recordEntries.add(entry);
+    /**
+     * or get record schema from server
+     * RecordSchema schema = client.getTopic("projectName", "topicName").getRecordSchema();
+     */
 
-    // put records
-    client.putRecords("projectName", "topicName", recordEntries);
+    List<RecordEntry> recordEntries = new ArrayList<>();
+    for (int cnt = 0; cnt < 10; ++cnt) {
+        RecordEntry entry = new RecordEntry();
+        entry.addAttribute("key1", "value1");
+        entry.addAttribute("key2", "value2");
+        
+        TupleRecordData data = new TupleRecordData(schema);
+        data.setField("field1", "testValue");
+        data.setField("field2", 1);
+        
+        entry.setRecordData(data);
+        recordEntries.add(entry);
+    }
+
+    // put tuple records by shard
+    client.putRecordsByShard(PROJECT_NAME, TOPIC_NAME, SHARD_ID, recordEntries);
 
 ##### 5. GetRecords
     // get records
-    GetCursorResult cursor = client.getCursor("projectName", "topicName", "shardId", 1455869335000 /*ms*/);
-    GetRecordsResult r = client.getRecords("projectName", "topicName", "shardId", cursor.getCursor(), 10);
+    GetCursorResult getCursorResult = client.getCursor(PROJECT_NAME, TOPIC_NAME, SHARD_ID, CursorType.SEQUENCE, 0);
+    GetRecordsResult getRecordsResult = client.getRecords(PROJECT_NAME, TOPIC_NAME, SHARD_ID, schema, getCursorResult.getCursor(), 100);
+    for (RecordEntry entry : getRecordsResult.getRecords()) {
+        TupleRecordData data = (TupleRecordData) entry.getRecordData();
+        System.out.println("field1:" + data.getField(0) + ", field2:" + data.getField("field2"));
+    }
 
 ### License
 
