@@ -17,7 +17,7 @@ import java.util.List;
 
 public class DatahubWrapperExample {
     private String accessId = "";
-    private String accessKey = "=";
+    private String accessKey = "";
     private String endpoint = "";
     private DatahubClient client;
     private Topic topic;

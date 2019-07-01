@@ -159,7 +159,7 @@ public class GetConnectorResultDeserializer extends JsonDeserializer<GetConnecto
 
     private SinkConfig deserializeDatahubConfig(JsonNode tree) {
         SinkDatahubConfig config = new SinkDatahubConfig();
-        JsonNode node = tree.get("DatahubEndpoint");
+        JsonNode node = tree.get("Endpoint");
         if (node != null && node.isTextual()) {
             config.setEndpoint(node.asText());
         }

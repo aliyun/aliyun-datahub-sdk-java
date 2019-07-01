@@ -17,6 +17,21 @@ public class SinkDatahubConfig extends SinkConfig {
      */
     private String topicName;
 
+    /**
+     * Authentication mode when visiting oss service
+     */
+    private AuthMode authMode;
+
+    /**
+     * AccessId used to visit oss service
+     */
+    private String accessId;
+
+    /**
+     * AccessKey used to visit oss service
+     */
+    private String accessKey;
+
     public String getEndpoint() {
         return endpoint;
     }
@@ -39,5 +54,29 @@ public class SinkDatahubConfig extends SinkConfig {
 
     public void setTopicName(String topicName) {
         this.topicName = topicName;
+    }
+
+    public AuthMode getAuthMode() {
+        return authMode;
+    }
+
+    public void setAuthMode(AuthMode authMode) {
+        this.authMode = authMode;
+    }
+
+    public String getAccessId() {
+        return accessId;
+    }
+
+    public void setAccessId(String accessId) {
+        this.accessId = accessId;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
     }
 }

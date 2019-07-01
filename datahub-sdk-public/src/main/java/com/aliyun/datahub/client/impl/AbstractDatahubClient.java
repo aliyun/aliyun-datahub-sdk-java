@@ -2,18 +2,23 @@ package com.aliyun.datahub.client.impl;
 
 import com.aliyun.datahub.client.DatahubClient;
 import com.aliyun.datahub.client.auth.Account;
+import com.aliyun.datahub.client.common.DatahubConstant;
 import com.aliyun.datahub.client.exception.*;
 import com.aliyun.datahub.client.http.HttpClient;
 import com.aliyun.datahub.client.http.HttpConfig;
-import com.aliyun.datahub.client.http.HttpInterceptor;
-import com.aliyun.datahub.client.http.HttpRequest;
+import com.aliyun.datahub.client.http.interceptor.InterceptorWrapper;
+import com.aliyun.datahub.client.impl.interceptor.DatahubAuthInterceptor;
+import com.aliyun.datahub.client.impl.interceptor.DatahubResponseInterceptor;
 import com.aliyun.datahub.client.metircs.ClientMetrics;
+import com.aliyun.datahub.client.model.BaseResult;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import retrofit2.Call;
+import retrofit2.Response;
 
-import java.util.concurrent.Callable;
+import java.io.IOException;
 
 import static com.aliyun.datahub.client.common.ErrorCode.*;
 
@@ -35,32 +40,30 @@ public abstract class AbstractDatahubClient implements DatahubClient {
     protected Timer GET_LATENCY_TIMER = ClientMetrics.getTimer(ClientMetrics.MetricType.GET_LATENCY);
 
     private String endpoint;
+    private Account account;
     private HttpConfig httpConfig;
-    private HttpInterceptor interceptor;
+    private InterceptorWrapper interceptorWrapper;
 
-    public AbstractDatahubClient(String endpoint, Account account, HttpConfig httpConfig) {
+    public AbstractDatahubClient(String endpoint, Account account, HttpConfig httpConfig, String userAgent) {
         this.endpoint = endpoint;
+        this.account = account;
         this.httpConfig = httpConfig;
-        this.interceptor = new DatahubInterceptorHandler(account);
+        this.interceptorWrapper = new InterceptorWrapper()
+                .setAuth(new DatahubAuthInterceptor(account, userAgent))
+                .setResponse(new DatahubResponseInterceptor());
     }
 
-    @Override
-    public void setEndpoint(String endpoint) {
-        this.endpoint = endpoint;
+    protected DataHubService getService() {
+        return getService(DataHubService.class);
     }
 
-    @Override
-    public void setUserAgent(String userAgent) {
-        this.interceptor.setUserAgent(userAgent);
+    protected DataHubService getService(Class<? extends DataHubService> cls) {
+        return HttpClient.createClient(endpoint, httpConfig, interceptorWrapper).create(cls);
     }
 
-    public final HttpRequest createRequest() {
-        return HttpClient.createRequest(endpoint, httpConfig, interceptor);
-    }
-
-    final protected <T> T callWrapper(Callable<T> callable) {
+    final protected <T> T callWrapper(Call<T> call) {
         try {
-            return callable.call();
+            return retryExecute(call);
         } catch (DatahubClientException ex) {
             LOGGER.warn("Request fail. error: {}", ex.toString());
             checkAndThrow(ex);
@@ -72,6 +75,28 @@ public abstract class AbstractDatahubClient implements DatahubClient {
 
         // should never go here
         return null;
+    }
+
+    final private <T> T retryExecute(Call<T> call) {
+        int count = 1;
+        while (true) {
+            try {
+                Response<T> response = call.execute();
+                if (response.body() instanceof BaseResult) {
+                    String requestId = response.raw().header(DatahubConstant.X_DATAHUB_REQUEST_ID);
+                    ((BaseResult) response.body()).setRequestId(requestId);
+                }
+                return response.body();
+            } catch (DatahubClientException ex) {
+                if (count >= httpConfig.getMaxRetryCount()) {
+                    throw ex;
+                }
+                ++count;
+                call = call.clone();
+            } catch (IOException ex) {
+                throw new DatahubClientException(ex.getMessage());
+            }
+        }
     }
 
     private void checkAndThrow(DatahubClientException ex) {
@@ -93,6 +118,8 @@ public abstract class AbstractDatahubClient implements DatahubClient {
                 TOPIC_ALREADY_EXIST.equalsIgnoreCase(errCode) ||
                 CONNECTOR_ALREADY_EXIST.equalsIgnoreCase(errCode)) {
             throw new ResourceAlreadyExistException(ex);
+        } else if (SEEK_OUT_OF_RANGE.equalsIgnoreCase(errCode)) {
+            throw new SeekOutOfRangeException(ex);
         } else if (UN_AUTHORIZED.equalsIgnoreCase(errCode)) {
             throw new AuthorizationFailureException(ex);
         } else if (NO_PERMISSION.equalsIgnoreCase(errCode) ||
@@ -133,11 +160,7 @@ public abstract class AbstractDatahubClient implements DatahubClient {
         return sb.toString();
     }
 
-    public HttpInterceptor getInterceptor() {
-        return interceptor;
-    }
-
-    public void setInterceptor(HttpInterceptor interceptor) {
-        this.interceptor = interceptor;
+    public void innerSetInterceptor(InterceptorWrapper interceptor) {
+        this.interceptorWrapper = interceptor;
     }
 }

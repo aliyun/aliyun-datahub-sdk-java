@@ -22,7 +22,7 @@ public abstract class ModelConvertToOld {
         return oldSchema;
     }
 
-    public static RecordEntry convertRecordEntry(com.aliyun.datahub.client.model.RecordEntry entry) {
+    public static RecordEntry convertRecordEntry(com.aliyun.datahub.client.model.RecordEntry entry, long sequence) {
         com.aliyun.datahub.client.model.TupleRecordData data = (com.aliyun.datahub.client.model.TupleRecordData)entry.getRecordData();
         com.aliyun.datahub.client.model.RecordSchema newSchema = data.getRecordSchema();
         RecordSchema oldSchema = convertRecordSchema(newSchema);
@@ -32,7 +32,7 @@ public abstract class ModelConvertToOld {
         oldEntry.setHashKey(entry.getHashKey());
         oldEntry.setPartitionKey(entry.getPartitionKey());
         oldEntry.setSystemTime(entry.getSystemTime());
-        oldEntry.setSequence(entry.getSequence());
+        oldEntry.setSequence(entry.getSequence() == -1  ? sequence : entry.getSequence());
         if (entry.getAttributes() != null) {
             for (Map.Entry<String, String> strPair : entry.getAttributes().entrySet()) {
                 oldEntry.putAttribute(strPair.getKey(), strPair.getValue());

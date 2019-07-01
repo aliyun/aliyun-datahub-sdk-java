@@ -2,6 +2,7 @@ package com.aliyun.datahub.client.ut;
 
 import com.aliyun.datahub.client.exception.DatahubClientException;
 import com.aliyun.datahub.client.model.GetProjectResult;
+import org.apache.commons.lang3.StringUtils;
 import org.mockserver.model.Header;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -141,8 +142,8 @@ public class ErrorResponseTest extends MockServer {
         } catch (DatahubClientException e) {
             Assert.assertNull(e.getRequestId());
             Assert.assertEquals(500, e.getHttpStatus());
-            Assert.assertNull(e.getErrorCode());
-            Assert.assertTrue(e.getMessage().contains("Error reading entity"));
+            Assert.assertTrue(StringUtils.isEmpty(e.getErrorCode()));
+            Assert.assertTrue(StringUtils.isEmpty(e.getErrorMessage()));
         }
 
     }

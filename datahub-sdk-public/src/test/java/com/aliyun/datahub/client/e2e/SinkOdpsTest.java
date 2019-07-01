@@ -4,7 +4,6 @@ import com.aliyun.datahub.client.e2e.common.Configure;
 import com.aliyun.datahub.client.e2e.common.Constant;
 import com.aliyun.datahub.client.exception.DatahubClientException;
 import com.aliyun.datahub.client.exception.InvalidParameterException;
-import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.model.*;
 import com.aliyun.odps.*;
 import com.aliyun.odps.account.AliyunAccount;
@@ -25,7 +24,7 @@ import java.util.*;
 
 import static org.junit.Assert.fail;
 
-@Test(enabled = false)
+@Test
 public class SinkOdpsTest extends BaseConnectorTest {
     private SinkOdpsConfig config;
     private Odps odps;
@@ -33,6 +32,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
     private String odpsProject = Configure.getString(Constant.ODPS_PROJECT);
     private String odpsTable;
     private static final long TIMESTAMP = System.currentTimeMillis() * 1000;
+    private static boolean hasRowKey = true;
 
     @BeforeClass
     public static void setUpBeforeClass() {
@@ -61,6 +61,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
             setDefaultProject(config.getProject());
         }};
         tunnel = new TableTunnel(odps);
+        hasRowKey = true;
     }
 
     @AfterMethod
@@ -102,34 +103,58 @@ public class SinkOdpsTest extends BaseConnectorTest {
     }
 
     private void putRecords(RecordSchema schema) {
+        putRecords(schema, new HashSet<String>());
+    }
+
+    private void putRecords(RecordSchema schema, Set<String> nullCol) {
         // put records
         List<RecordEntry> recordEntries = new ArrayList<>();
         for (int i = 0; i < RECORD_COUNT; ++i) {
-            recordEntries.add(genData(schema, -1));
+            recordEntries.add(genData(schema, -1, nullCol));
         }
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
+    }
+
+    private void putRecordsByShard(RecordSchema schema) {
+        ListShardResult shards = client.listShard(TEST_PROJECT_NAME, tupleTopicName);
+        for (ShardEntry shard : shards.getShards()) {
+            if (shard.getState() == ShardState.ACTIVE) {
+                // put records
+                List<RecordEntry> recordEntries = new ArrayList<>();
+                for (int i = 0; i < RECORD_COUNT; ++i) {
+                    RecordEntry entry = genData(schema, -1, new HashSet<String>());
+                    entry.setShardId(shard.getShardId());
+                    recordEntries.add(entry);
+                }
+                PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
+                Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
+            }
+        }
+
     }
 
     private void putRecordsWithEventTime(RecordSchema schema, long eventTime) {
         List<RecordEntry> recordEntries = new ArrayList<>();
         for (int i = 0; i < RECORD_COUNT; ++i) {
-            recordEntries.add(genData(schema, eventTime));
+            recordEntries.add(genData(schema, eventTime, new HashSet<String>()));
         }
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
     }
 
-    private RecordEntry genData(RecordSchema schema, long eventTime) {
+    private RecordEntry genData(RecordSchema schema, long eventTime, Set<String> nullCol) {
         final TupleRecordData recordData = new TupleRecordData(schema);
 
         for (Field field : schema.getFields()) {
             String fieldName = field.getName();
+            if (nullCol.contains(fieldName)) {
+                continue;
+            }
             if (fieldName.equals("event_time")) {
                 recordData.setField(fieldName, eventTime);
                 continue;
             }
-
             switch (field.getType()) {
                 case STRING:
                     recordData.setField(fieldName, String.valueOf(TIMESTAMP));
@@ -157,6 +182,47 @@ public class SinkOdpsTest extends BaseConnectorTest {
         return recordEntry;
     }
 
+    private RecordEntry genInvalidPartitionData(RecordSchema schema) {
+        final TupleRecordData recordData = new TupleRecordData(schema);
+
+        for (Field field : schema.getFields()) {
+            String fieldName = field.getName();
+            switch (field.getType()) {
+                case STRING:
+                    recordData.setField(fieldName, "*");
+                    break;
+                case BOOLEAN:
+                    recordData.setField(fieldName, false);
+                    break;
+                case DOUBLE:
+                    recordData.setField(fieldName, (double)TIMESTAMP);
+                    break;
+                case TIMESTAMP:
+                    recordData.setField(fieldName, TIMESTAMP);
+                    break;
+                case BIGINT:
+                    recordData.setField(fieldName, TIMESTAMP);
+                    break;
+                case DECIMAL:
+                    recordData.setField(fieldName, BigDecimal.valueOf(Math.sqrt(TIMESTAMP)));
+                    break;
+            }
+        }
+
+        RecordEntry recordEntry = new RecordEntry() {{ setRecordData(recordData); }};
+        recordEntry.setPartitionKey(String.valueOf(random.nextInt(RECORD_COUNT)));
+        return recordEntry;
+    }
+
+    private void putInvalidRecords(RecordSchema schema) {
+        List<RecordEntry> recordEntries = new ArrayList<>();
+        for (int i = 0; i < RECORD_COUNT; ++i) {
+            recordEntries.add(genInvalidPartitionData(schema));
+        }
+        PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
+        Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
+    }
+
     private void checkSinkedData(TableSchema odpsSchema, long recordCount) {
         PartitionSpec partitionSpec = null;
         if (!odpsSchema.getPartitionColumns().isEmpty()) {
@@ -171,6 +237,19 @@ public class SinkOdpsTest extends BaseConnectorTest {
         } catch (Exception e) {
             throw new DatahubClientException(e.getMessage());
         }
+    }
+
+    private void downloadAndCheckRecordCount(TableSchema odpsSchema, PartitionSpec partitionSpec, long recordCount) throws TunnelException, IOException {
+        TableTunnel.DownloadSession down = null;
+        if (odpsSchema.getPartitionColumns().isEmpty()) {
+            down = tunnel.createDownloadSession(odpsProject, odpsTable);
+        } else {
+            down = tunnel.createDownloadSession(odpsProject, odpsTable, partitionSpec);
+        }
+
+        TableSchema schema = down.getSchema();
+        long count = down.getRecordCount();
+        Assert.assertEquals(recordCount, count);
     }
 
     private void downloadAndCheckData(TableSchema odpsSchema, PartitionSpec partitionSpec, long recordCount) throws TunnelException, IOException {
@@ -198,29 +277,33 @@ public class SinkOdpsTest extends BaseConnectorTest {
 
     private void checkData(Record r, TableSchema schema) {
         for (Column i : schema.getColumns()) {
-            switch (i.getType()) {
-                case BIGINT:
-                    Assert.assertEquals(r.getBigint(i.getName()), Long.valueOf(TIMESTAMP));
-                    break;
-                case BOOLEAN:
-                    Assert.assertEquals(r.getBoolean(i.getName()), Boolean.valueOf(false));
-                    break;
-                case STRING:
-                    Assert.assertEquals(r.getString(i.getName()), String.valueOf(TIMESTAMP));
-                    break;
-                case DATETIME:
-                    Assert.assertEquals(r.getDatetime(i.getName()), new Date(TIMESTAMP/1000));
-                    break;
-                case DOUBLE:
-                    Assert.assertEquals(r.getDouble(i.getName()), (double)TIMESTAMP);
-                    break;
-                case DECIMAL:
-                    BigDecimal bd = BigDecimal.valueOf(Math.sqrt(TIMESTAMP));
-                    if (bd.scale() > 18) {
-                        bd = bd.setScale(18, BigDecimal.ROUND_HALF_UP);
-                    }
-                    Assert.assertEquals(r.getDecimal(i.getName()), bd);
-                    break;
+            if (i.getName().equals("__system_rowkey__")) {
+                Assert.assertEquals(r.getString(i.getName()) != null, hasRowKey);
+            } else {
+                switch (i.getType()) {
+                    case BIGINT:
+                        Assert.assertEquals(r.getBigint(i.getName()), Long.valueOf(TIMESTAMP));
+                        break;
+                    case BOOLEAN:
+                        Assert.assertEquals(r.getBoolean(i.getName()), Boolean.valueOf(false));
+                        break;
+                    case STRING:
+                        Assert.assertEquals(r.getString(i.getName()), String.valueOf(TIMESTAMP));
+                        break;
+                    case DATETIME:
+                        Assert.assertEquals(r.getDatetime(i.getName()), new Date(TIMESTAMP/1000));
+                        break;
+                    case DOUBLE:
+                        Assert.assertEquals(r.getDouble(i.getName()), (double)TIMESTAMP);
+                        break;
+                    case DECIMAL:
+                        BigDecimal bd = BigDecimal.valueOf(Math.sqrt(TIMESTAMP));
+                        if (bd.scale() > 18) {
+                            bd = bd.setScale(18, BigDecimal.ROUND_HALF_UP);
+                        }
+                        Assert.assertEquals(r.getDecimal(i.getName()), bd);
+                        break;
+                }
             }
         }
     }
@@ -269,7 +352,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
         putRecords(schema);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(odpsSchema, RECORD_COUNT);
@@ -282,18 +365,13 @@ public class SinkOdpsTest extends BaseConnectorTest {
         getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         Assert.assertEquals(getConnectorResult.getState(), ConnectorState.STOPPED);
 
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
 
-        /* TODO: SinkOdpsV1 state is error now.
-        for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
-            Assert.assertEquals(entry.getState(), ConnectorShardState.STOPPED);
-        }
-        */
         // update connector offset
         ConnectorOffset offset = new ConnectorOffset() {{ setSequence(10); setTimestamp(1000);}};
         client.updateConnectorOffset(TEST_PROJECT_NAME, tupleTopicName, connectorType, null, offset);
 
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             Assert.assertEquals(entry.getCurrSequence(), 10);
             Assert.assertEquals(entry.getCurrTimestamp(), 1000);
@@ -312,10 +390,10 @@ public class SinkOdpsTest extends BaseConnectorTest {
         // write data to new shard
         putRecords(schema);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check sealed state
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (Map.Entry<String, ConnectorShardStatusEntry> entrySet : getConnectorShardStatusResult.getStatusEntryMap().entrySet()) {
             if (entrySet.getKey().equals("0")) {
                 Assert.assertEquals(entrySet.getValue().getState(), ConnectorShardState.FINISHED);
@@ -373,7 +451,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
         putRecordsWithEventTime(schema, eventTime2 * 1000);
 
         // wait for sinked
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check odps data
         // check eventTime1
@@ -422,12 +500,12 @@ public class SinkOdpsTest extends BaseConnectorTest {
         // put records
         List<RecordEntry> recordEntries = new ArrayList<>();
         for (int i = 0; i < RECORD_COUNT; ++i) {
-            recordEntries.add(genData(schema, -1));
+            recordEntries.add(genData(schema, -1, new HashSet<String>()));
         }
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         PartitionSpec partitionSpec = new PartitionSpec();
         SimpleDateFormat pt = new SimpleDateFormat("yyyyMMdd");
@@ -478,7 +556,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
         putRecordsWithEventTime(schema, currentTime*1000);
 
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // default use system_time
         PartitionSpec partitionSpec = new PartitionSpec();
@@ -920,6 +998,53 @@ public class SinkOdpsTest extends BaseConnectorTest {
     }
 
     @Test
+    public void testSinkWithTableColSizeNotMatch2() throws Exception {
+        List<String> columnFields = new ArrayList<String>();
+        columnFields.add("f1");
+
+        RecordSchema schema = new RecordSchema();
+        schema.addField(new Field("f1", FieldType.STRING));
+        createTupleTopicBySchema(schema);
+
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        odpsSchema.addColumn(new Column("f2", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        int timeRange = 60;
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.SYSTEM_TIME);
+        config.setTimeRange(60);
+        SinkOdpsConfig.PartitionConfig partitionConfig = new SinkOdpsConfig.PartitionConfig() {{
+            addConfig("pt", "%Y%m%d");
+            addConfig("ct", "%H%M");
+        }};
+        config.setPartitionConfig(partitionConfig);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
+
+        long currentTime = System.currentTimeMillis()/1000;
+        currentTime = (currentTime - currentTime%(timeRange*60)) * 1000;
+        // put records
+        List<RecordEntry> recordEntries = new ArrayList<>();
+        for (int i = 0; i < RECORD_COUNT; ++i) {
+            recordEntries.add(genData(schema, -1, new HashSet<String>()));
+        }
+        PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
+        Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
+
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+
+        PartitionSpec partitionSpec = new PartitionSpec();
+        SimpleDateFormat pt = new SimpleDateFormat("yyyyMMdd");
+        partitionSpec.set("pt", pt.format(new Date(currentTime)));
+        SimpleDateFormat ct = new SimpleDateFormat("HHmm");
+        partitionSpec.set("ct", ct.format(new Date(currentTime)));
+        System.out.println(partitionSpec.toString());
+        downloadAndCheckRecordCount(odpsSchema, partitionSpec, RECORD_COUNT);
+    }
+
+    @Test
     public void testSinkWithTableColTypeNotMatch() throws Exception {
         List<String> columnFields = new ArrayList<String>();
 
@@ -1008,7 +1133,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
 
         putRecords(schema);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check odps data
         checkSinkedData(odpsSchema, RECORD_COUNT);
@@ -1018,7 +1143,7 @@ public class SinkOdpsTest extends BaseConnectorTest {
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
 
         putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check odps data
         checkSinkedData(odpsSchema, RECORD_COUNT * 2);
@@ -1058,14 +1183,14 @@ public class SinkOdpsTest extends BaseConnectorTest {
 
         config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
-        putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        putRecordsByShard(schema);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         client.splitShard(TEST_PROJECT_NAME, tupleTopicName, "0");
         client.waitForShardReady(TEST_PROJECT_NAME, tupleTopicName);
 
-        putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        putRecordsByShard(schema);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         GetConnectorResult getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
         Assert.assertEquals(getConnectorResult.getColumnFields(), columnFields);
@@ -1074,12 +1199,14 @@ public class SinkOdpsTest extends BaseConnectorTest {
             for (ShardEntry se : listShardResult.getShards()) {
                 if (sc.getShardId().equals(se.getShardId())) {
                     if (se.getState() == ShardState.CLOSED) {
-                        Assert.assertEquals(sc.getCurSequence(), RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, RECORD_COUNT);
                     } else if (se.getParentShardIds().contains("0")) {
-                        Assert.assertEquals(sc.getCurSequence(), RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, RECORD_COUNT);
                     } else {
-                        Assert.assertEquals(sc.getCurSequence(), 2 * RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, 2 * RECORD_COUNT);
                     }
+                } else {
+                    continue;
                 }
             }
         }
@@ -1120,33 +1247,27 @@ public class SinkOdpsTest extends BaseConnectorTest {
         config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
 
-        GetConnectorResult getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
-        Assert.assertEquals(getConnectorResult.getColumnFields(), columnFields);
-        for (ShardContext sc : getConnectorResult.getShardContexts()) {
-            Assert.assertEquals(sc.getCurSequence(), -1);
-        }
-
-        putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        putRecordsByShard(schema);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         client.mergeShard(TEST_PROJECT_NAME, tupleTopicName, "0", "1");
         client.waitForShardReady(TEST_PROJECT_NAME, tupleTopicName);
 
-        putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
-
-        getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+        putRecordsByShard(schema);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+        sleepInMs(MAX_OPERATOR_INTERVAL);
+        GetConnectorResult getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
         Assert.assertEquals(getConnectorResult.getColumnFields(), columnFields);
         ListShardResult listShardResult = client.listShard(TEST_PROJECT_NAME, tupleTopicName);
         for (ShardContext sc : getConnectorResult.getShardContexts()) {
             for (ShardEntry se : listShardResult.getShards()) {
                 if (sc.getShardId().equals(se.getShardId())) {
                     if (se.getState() == ShardState.CLOSED) {
-                        Assert.assertEquals(sc.getCurSequence(), RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, RECORD_COUNT);
                     } else if (se.getParentShardIds().contains("0")) {
-                        Assert.assertEquals(sc.getCurSequence(), RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, RECORD_COUNT);
                     } else {
-                        Assert.assertEquals(sc.getCurSequence(), 2 * RECORD_COUNT);
+                        Assert.assertEquals(sc.getCurSequence() + 1, 2 * RECORD_COUNT);
                     }
                 } else {
                     continue;
@@ -1186,22 +1307,19 @@ public class SinkOdpsTest extends BaseConnectorTest {
 
         long currentTime = System.currentTimeMillis()/1000;
         putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         doneTime = client.getConnectorDoneTime(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS).getDoneTime();
-        Assert.assertTrue(doneTime > currentTime - 1 && doneTime < currentTime + 1);
+        Assert.assertTrue(doneTime > currentTime - 5 && doneTime < currentTime + 5);
 
         currentTime = System.currentTimeMillis()/1000;
         putRecords(schema);
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         doneTime = client.getConnectorDoneTime(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS).getDoneTime();
-        Assert.assertTrue(doneTime > currentTime - 1 && doneTime < currentTime + 1);
+        Assert.assertTrue(doneTime > currentTime - 5 && doneTime < currentTime + 5);
     }
 
-    /**
-     * TODO: Enable when server ready
-     */
     @Test
     public void testSinkWithUpdateConfig() throws Exception {
         List<String> columnFields = new ArrayList<String>();
@@ -1236,6 +1354,8 @@ public class SinkOdpsTest extends BaseConnectorTest {
         config.setEndpoint("http://test");
         config.setTunnelEndpoint("http://test_tunnel");
         config.setTimeRange(15);
+        config.setAccessId("test");
+        config.setAccessKey("ggg");
         SinkOdpsConfig.PartitionConfig partitionConfig2 = new SinkOdpsConfig.PartitionConfig() {{
             addConfig("pt", "%Y%m%d");
             addConfig("ct", "%H");
@@ -1250,5 +1370,213 @@ public class SinkOdpsTest extends BaseConnectorTest {
         Assert.assertEquals(newConfig.getTimeRange(), 15);
         Assert.assertEquals(newConfig.getPartitionConfig().getConfigMap().get("pt"), "%Y%m%d");
         Assert.assertEquals(newConfig.getPartitionConfig().getConfigMap().get("ct"), "%H");
+    }
+
+    @Test
+    public void testNormalWithUserDefineNullPartition() {
+        RecordSchema schema = new RecordSchema() {{
+            addField(new Field("f1", FieldType.STRING));
+            addField(new Field("pt", FieldType.STRING));
+            addField(new Field("ct", FieldType.STRING));
+        }};
+
+        createTupleTopicBySchema(schema);
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        List<String> columnFields = Arrays.asList("f1", "pt", "ct");
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
+
+        Set<String> nullCol1 = new HashSet<>();
+        nullCol1.add("pt");
+        nullCol1.add("ct");
+        putRecords(schema, nullCol1);
+        Set<String> nullCol2 = new HashSet<>();
+        nullCol2.add("pt");
+        putRecords(schema, nullCol2);
+        Set<String> nullCol3 = new HashSet<>();
+        putRecords(schema, nullCol3);
+        // wait for sink
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+
+        // check data
+        checkSinkedData(odpsSchema, RECORD_COUNT);
+
+        long totalDiscard = 0;
+        GetConnectorShardStatusResult status =
+                client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+
+        for (Map.Entry<String, ConnectorShardStatusEntry> sc : status.getStatusEntryMap().entrySet()) {
+            totalDiscard += sc.getValue().getDiscardCount();
+        }
+        Assert.assertEquals(totalDiscard, RECORD_COUNT * 2);
+    }
+
+    @Test
+    public void testNormalWithUserDefineInvalidPartition() {
+        RecordSchema schema = new RecordSchema() {{
+            addField(new Field("f1", FieldType.STRING));
+            addField(new Field("pt", FieldType.STRING));
+            addField(new Field("ct", FieldType.STRING));
+        }};
+
+        createTupleTopicBySchema(schema);
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        List<String> columnFields = Arrays.asList("f1", "pt", "ct");
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
+
+        putInvalidRecords(schema);
+
+        Set<String> nullCol = new HashSet<>();
+        putRecords(schema, nullCol);
+
+        Set<String> nullCol1 = new HashSet<>();
+        nullCol1.add("pt");
+        nullCol1.add("ct");
+        putRecords(schema, nullCol1);
+        // wait for sink
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+
+        // check data
+        checkSinkedData(odpsSchema, RECORD_COUNT);
+        long totalDiscard = 0;
+        GetConnectorShardStatusResult status =
+                client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+
+        for (Map.Entry<String, ConnectorShardStatusEntry> sc : status.getStatusEntryMap().entrySet()) {
+            totalDiscard += sc.getValue().getDiscardCount();
+        }
+        Assert.assertEquals(totalDiscard, RECORD_COUNT * 2);
+    }
+
+    @Test
+    public void testNormalWithRowKey() {
+        RecordSchema schema = new RecordSchema() {{
+            addField(new Field("f1", FieldType.STRING));
+            addField(new Field("pt", FieldType.STRING));
+            addField(new Field("ct", FieldType.STRING));
+        }};
+
+        createTupleTopicBySchema(schema);
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addColumn(new Column("__system_rowkey__", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        List<String> columnFields = Arrays.asList("f1", "pt", "ct");
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
+
+        putRecords(schema);
+
+        // wait for sink
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+
+        // check data
+        checkSinkedData(odpsSchema, RECORD_COUNT);
+        long total = 0;
+        GetConnectorShardStatusResult status =
+                client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+
+        for (Map.Entry<String, ConnectorShardStatusEntry> sc : status.getStatusEntryMap().entrySet()) {
+            total += sc.getValue().getCurrSequence() + 1;
+        }
+        Assert.assertEquals(total, RECORD_COUNT);
+    }
+
+    @Test
+    public void testNormalWithRowKeyInTopic() {
+        RecordSchema schema = new RecordSchema() {{
+            addField(new Field("f1", FieldType.STRING));
+            addField(new Field("pt", FieldType.STRING));
+            addField(new Field("ct", FieldType.STRING));
+            addField(new Field("__system_rowkey__", FieldType.STRING));
+        }};
+
+        createTupleTopicBySchema(schema);
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addColumn(new Column("__system_rowkey__", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        List<String> columnFields = Arrays.asList("f1", "pt", "ct");
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.USER_DEFINE);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
+
+        putRecords(schema);
+
+        // wait for sink
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
+
+        // check data
+        hasRowKey = false;
+        checkSinkedData(odpsSchema, RECORD_COUNT);
+        long total = 0;
+        GetConnectorShardStatusResult status =
+                client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+
+        for (Map.Entry<String, ConnectorShardStatusEntry> sc : status.getStatusEntryMap().entrySet()) {
+            total += sc.getValue().getCurrSequence() + 1;
+        }
+        Assert.assertEquals(total, RECORD_COUNT);
+    }
+
+    @Test
+    public void testUnretryableException() throws Exception {
+        List<String> columnFields = new ArrayList<String>();
+        columnFields.add("f1");
+
+        RecordSchema schema = new RecordSchema();
+        schema.addField(new Field("f1", FieldType.STRING));
+        createTupleTopicBySchema(schema);
+
+        TableSchema odpsSchema = new TableSchema();
+        odpsSchema.addColumn(new Column("f1", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("pt", OdpsType.STRING));
+        odpsSchema.addPartitionColumn(new Column("ct", OdpsType.STRING));
+        createOdpsTable(odpsSchema);
+
+        config.setPartitionMode(SinkOdpsConfig.PartitionMode.SYSTEM_TIME);
+        config.setTimeRange(60);
+        SinkOdpsConfig.PartitionConfig partitionConfig = new SinkOdpsConfig.PartitionConfig() {{
+            addConfig("pt", "%Y%m%d");
+            addConfig("ct", "%H%M");
+        }};
+        config.setPartitionConfig(partitionConfig);
+        client.createConnector(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS, columnFields, config);
+        sleepInMs(5*1000);
+        dropOpdsTable(odpsTable);
+
+        // put records
+        List<RecordEntry> recordEntries = new ArrayList<>();
+        for (int i = 0; i < RECORD_COUNT; ++i) {
+            recordEntries.add(genData(schema, -1, new HashSet<String>()));
+        }
+        PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
+        Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
+
+        sleepInMs(30*1000);
+        GetConnectorShardStatusResult status =
+                client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, ConnectorType.SINK_ODPS);
+
+        for (Map.Entry<String, ConnectorShardStatusEntry> sc : status.getStatusEntryMap().entrySet()) {
+            Assert.assertEquals(sc.getValue().getState(), ConnectorShardState.STOPPED);
+            Assert.assertNotEquals(sc.getValue().getLastErrorMessage(), null);
+            Assert.assertFalse(sc.getValue().getLastErrorMessage().equals(""));
+        }
     }
 }

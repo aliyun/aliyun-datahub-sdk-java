@@ -14,6 +14,7 @@ public abstract class Constant {
     public static final String ODPS_ACCESS_ID = "odps.accessId";
     public static final String ODPS_ACCESS_KEY = "odps.accessKey";
 
+    public static final String ADS_ENABLE_DECIMAL = "ads.enableDecimal";
     public static final String ADS_TABLE_GROUP = "ads.tableGroup";
     public static final String ADS_HOST = "ads.host";
     public static final String ADS_PORT = "ads.port";
@@ -44,4 +45,9 @@ public abstract class Constant {
     public static final String FC_FUNCTION = "fc.function";
     public static final String FC_ACCESS_ID = "fc.accessId";
     public static final String FC_ACCESS_KEY = "fc.accessKey";
+
+    public static final String SINK_DATAHUB_ENDPOINT = "sink.datahub.endpoint";
+    public static final String SINK_DATAHUB_PROJECT = "sink.datahub.project";
+    public static final String SINK_DATAHUB_ACCESS_ID = "sink.datahub.accessId";
+    public static final String SINK_DATAHUB_ACCESS_KEY = "sink.datahub.accessKey";
 }

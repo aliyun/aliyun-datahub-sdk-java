@@ -1,6 +1,7 @@
 package com.aliyun.datahub.client.impl.request.protobuf;
 
-import com.aliyun.datahub.client.http.provider.protobuf.BaseProtobufModel;
+import com.aliyun.datahub.client.http.converter.BaseProtobufModel;
+import com.aliyun.datahub.client.model.BaseResult;
 import com.aliyun.datahub.client.model.RecordEntry;
 import com.aliyun.datahub.client.model.protobuf.DatahubProtos;
 import com.aliyun.datahub.client.model.protobuf.RecordEntryPB;
@@ -8,7 +9,7 @@ import com.google.protobuf.Message;
 
 import java.util.List;
 
-public class PutRecordsRequestPB extends BaseProtobufModel {
+public class PutRecordsRequestPB extends BaseResult implements BaseProtobufModel {
     private DatahubProtos.PutRecordsRequest.Builder builder = DatahubProtos.PutRecordsRequest.newBuilder();
     private List<RecordEntry> originRecords;
 
@@ -40,5 +41,10 @@ public class PutRecordsRequestPB extends BaseProtobufModel {
     @Override
     public Message getMessage() {
         return builder.build();
+    }
+
+    @Override
+    public void setMessage(Message message) {
+
     }
 }

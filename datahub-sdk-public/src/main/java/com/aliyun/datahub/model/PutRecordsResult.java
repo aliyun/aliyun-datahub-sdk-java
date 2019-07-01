@@ -44,7 +44,7 @@ public class PutRecordsResult {
         List<com.aliyun.datahub.client.model.RecordEntry> newEntryList = proxyResult.getFailedRecords();
         if (newEntryList != null) {
             for (com.aliyun.datahub.client.model.RecordEntry entry : newEntryList) {
-                RecordEntry oldEntry = ModelConvertToOld.convertRecordEntry(entry);
+                RecordEntry oldEntry = ModelConvertToOld.convertRecordEntry(entry, 0);
                 recordEntries.add(oldEntry);
             }
         }

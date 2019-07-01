@@ -4,7 +4,6 @@ import com.aliyun.datahub.client.e2e.common.Configure;
 import com.aliyun.datahub.client.e2e.common.Constant;
 import com.aliyun.datahub.client.exception.DatahubClientException;
 import com.aliyun.datahub.client.exception.InvalidParameterException;
-import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.model.*;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -21,6 +20,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
     static final String PK_COL = "pk";
     private Connection dbConn;
     protected SinkMysqlConfig config;
+    protected boolean enableDecimal = true;
 
     private Map<String, RecordEntry> pkDataMap = new HashMap<>();
 
@@ -274,14 +274,18 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
+
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
         sleepInMs(MAX_OPERATOR_INTERVAL);
@@ -302,7 +306,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(schema, columnFields);
@@ -314,7 +318,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         Assert.assertEquals(getConnectorResult.getState(), ConnectorState.STOPPED);
 
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             Assert.assertEquals(entry.getState(), ConnectorShardState.STOPPED);
         }
@@ -322,7 +326,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         ConnectorOffset offset = new ConnectorOffset() {{ setSequence(10); setTimestamp(1000);}};
         client.updateConnectorOffset(TEST_PROJECT_NAME, tupleTopicName, connectorType, null, offset);
 
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             Assert.assertEquals(entry.getCurrSequence(), 10);
             Assert.assertEquals(entry.getCurrTimestamp(), 1000);
@@ -342,10 +346,10 @@ public class SinkMysqlTest extends BaseConnectorTest {
         client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check sealed state
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (Map.Entry<String, ConnectorShardStatusEntry> entrySet : getConnectorShardStatusResult.getStatusEntryMap().entrySet()) {
             if (entrySet.getKey().equals("0")) {
                 Assert.assertEquals(entrySet.getValue().getState(), ConnectorShardState.FINISHED);
@@ -363,14 +367,19 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
+
+
         config.setInsertMode(SinkMysqlConfig.InsertMode.OVERWRITE);
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
@@ -383,7 +392,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(schema, columnFields);
@@ -402,14 +411,18 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, false);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
+
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
         // put records
@@ -420,12 +433,12 @@ public class SinkMysqlTest extends BaseConnectorTest {
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
         long dbCount = getDbCount();
         Assert.assertEquals(dbCount, RECORD_COUNT);
 
         long seqCount = 0;
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             seqCount += (entry.getCurrSequence() + 1);
         }
@@ -440,14 +453,17 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
         // put records
@@ -459,7 +475,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(schema, columnFields);
@@ -476,14 +492,17 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
         // put records
@@ -495,7 +514,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         PutRecordsResult putRecordsResult = client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         long dbCount = getDbCount();
         Assert.assertEquals(dbCount, 0);
@@ -513,7 +532,9 @@ public class SinkMysqlTest extends BaseConnectorTest {
         schema.addField(new Field("f3", FieldType.DOUBLE));
         schema.addField(new Field("f4", FieldType.TIMESTAMP));
         schema.addField(new Field("f5", FieldType.BOOLEAN));
-        schema.addField(new Field("f6", FieldType.DECIMAL));
+        if (enableDecimal) {
+            schema.addField(new Field("f6", FieldType.DECIMAL));
+        }
         createTupleTopicBySchema(schema);
 
         List<String> columnFields = Arrays.asList("f1", "f2", "pk");
@@ -528,7 +549,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(schema, columnFields);
@@ -542,14 +563,17 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "pk", "f6", "f4", "f5", "f3", "f2");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "pk", "f6", "f4", "f5", "f3", "f2") : Arrays.asList("f1", "pk", "f4", "f5", "f3", "f2");
         client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
 
         // put records
@@ -561,7 +585,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check data
         checkSinkedData(schema, columnFields);
@@ -575,14 +599,17 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
 
         createTableBySchema(schema, true);
         createTupleTopicBySchema(schema);
 
-        List<String> columnFields = Arrays.asList("f1", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f3", "f4", "f5", "pk");
         try {
             client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
             fail("ColumnFieldSizeNotMatch should throw exception");
@@ -600,7 +627,9 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.STRING));
         }};
         createTableBySchema(schema, true);
@@ -611,12 +640,15 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            if (enableDecimal) {
+                addField(new Field("f6", FieldType.DECIMAL));
+            }
             addField(new Field(PK_COL, FieldType.BIGINT));
         }};
         createTupleTopicBySchema(schema2);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = enableDecimal ?
+                Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk") : Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
         try {
             client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
             fail("FieldTypeNotMatch should throw exception");
@@ -634,7 +666,6 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
             addField(new Field(PK_COL, FieldType.STRING));
         }};
         createTableBySchema(schema, true);
@@ -644,19 +675,18 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f2", FieldType.BIGINT));
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
-            addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f7", FieldType.DECIMAL));
-            addField(new Field(PK_COL, FieldType.BIGINT));
+            addField(new Field("f7", FieldType.BOOLEAN));
+            addField(new Field(PK_COL, FieldType.STRING));
         }};
         createTupleTopicBySchema(schema2);
 
-        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "f6", "pk");
+        List<String> columnFields = Arrays.asList("f1", "f2", "f3", "f4", "f5", "pk");
         try {
             client.createConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType, columnFields, config);
-            fail("FieldTypeNotMatch should throw exception");
+            fail("FieldNameNotMatch should throw exception");
         } catch (DatahubClientException e) {
             Assert.assertTrue(e instanceof InvalidParameterException);
-            Assert.assertTrue(e.getMessage().contains("Datahub not have field:f6"));
+            Assert.assertTrue(e.getMessage().contains("Datahub not have field:f5"));
         }
     }
 
@@ -668,7 +698,7 @@ public class SinkMysqlTest extends BaseConnectorTest {
             addField(new Field("f3", FieldType.DOUBLE));
             addField(new Field("f4", FieldType.TIMESTAMP));
             addField(new Field("f5", FieldType.BOOLEAN));
-            addField(new Field("f6", FieldType.DECIMAL));
+            addField(new Field("f6", FieldType.STRING));
             addField(new Field(PK_COL, FieldType.STRING));
         }};
         createTableBySchema(schema, true);
@@ -713,10 +743,10 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // append datahub field
-        client.appendField(TEST_PROJECT_NAME, tupleTopicName, new Field("f6", FieldType.DECIMAL));
+        client.appendField(TEST_PROJECT_NAME, tupleTopicName, new Field("f6", FieldType.STRING));
 
         // create table
-        schema.addField(new Field("f6", FieldType.DECIMAL));
+        schema.addField(new Field("f6", FieldType.STRING));
         createTableBySchema(schema, true);
 
         // create connector
@@ -731,11 +761,11 @@ public class SinkMysqlTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         long total = 0;
         long discardCount = 0;
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             discardCount += entry.getDiscardCount();
             total += entry.getCurrSequence() + 1;

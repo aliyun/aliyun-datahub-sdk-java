@@ -6,7 +6,7 @@
 
 ### Requirements
 
-* Java 7+
+* Java 8+
 
 ### Clone and build
 
@@ -19,7 +19,7 @@
     <dependency>
         <groupId>com.aliyun.datahub</groupId>
         <artifactId>aliyun-sdk-datahub</artifactId>
-        <version>2.12.2-public</version>
+        <version>2.13.0-public</version>
     </dependency>
 
 ### Endpoint

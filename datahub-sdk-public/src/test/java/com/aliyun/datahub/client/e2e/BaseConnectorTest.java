@@ -1,7 +1,6 @@
 package com.aliyun.datahub.client.e2e;
 
 import com.aliyun.datahub.client.exception.DatahubClientException;
-import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.model.*;
 import org.testng.annotations.BeforeClass;
 
@@ -41,13 +40,14 @@ public abstract class BaseConnectorTest extends BaseTest {
         }
     }
 
-    protected void waitForAllShardSinked(long timeout) {
+    protected void waitForAllShardSinked(String topicName, long timeout) {
         long start = System.currentTimeMillis();
         long end = start + timeout;
         boolean allShardReady = false;
         while (start < end) {
-            allShardReady = isAllShardSinked();
+            allShardReady = isAllShardSinked(topicName);
             if (allShardReady) {
+                sleepInMs(2000);
                 break;
             }
 
@@ -59,19 +59,19 @@ public abstract class BaseConnectorTest extends BaseTest {
         }
     }
 
-    private boolean isAllShardSinked() {
+    private boolean isAllShardSinked(String topicName) {
         Map<String, ConnectorOffset> shardOffsetMap = new HashMap<>();
-        ListShardResult listShardResult = client.listShard(TEST_PROJECT_NAME, tupleTopicName);
+        ListShardResult listShardResult = client.listShard(TEST_PROJECT_NAME, topicName);
         for (ShardEntry entry : listShardResult.getShards()) {
             String shardId = entry.getShardId();
-            final GetCursorResult getCursorResult = client.getCursor(TEST_PROJECT_NAME, tupleTopicName, shardId, CursorType.LATEST);
+            final GetCursorResult getCursorResult = client.getCursor(TEST_PROJECT_NAME, topicName, shardId, CursorType.LATEST);
             shardOffsetMap.put(shardId, new ConnectorOffset() {{
                 setSequence(getCursorResult.getSequence());
                 setTimestamp(getCursorResult.getTimestamp());
             }});
         }
 
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, topicName, connectorType);
         for (Map.Entry<String, ConnectorShardStatusEntry> entrySet : getConnectorShardStatusResult.getStatusEntryMap().entrySet()) {
             String shardId = entrySet.getKey();
             ConnectorShardStatusEntry entry = entrySet.getValue();

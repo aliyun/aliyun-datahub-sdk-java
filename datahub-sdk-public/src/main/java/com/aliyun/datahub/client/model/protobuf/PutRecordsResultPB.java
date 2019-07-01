@@ -1,5 +1,6 @@
 package com.aliyun.datahub.client.model.protobuf;
 
+import com.aliyun.datahub.client.http.converter.BaseProtobufModel;
 import com.aliyun.datahub.client.model.PutErrorEntry;
 import com.aliyun.datahub.client.model.PutRecordsResult;
 import com.google.protobuf.Message;
@@ -7,7 +8,7 @@ import com.google.protobuf.Message;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PutRecordsResultPB extends PutRecordsResult {
+public class PutRecordsResultPB extends PutRecordsResult implements BaseProtobufModel {
     private DatahubProtos.PutRecordsResponse proto;
 
     @Override
@@ -26,6 +27,11 @@ public class PutRecordsResultPB extends PutRecordsResult {
 
     private PutErrorEntry convertFromProtoFormat(DatahubProtos.FailedRecord recordEntry) {
         return new PutErrorEntryPB(recordEntry);
+    }
+
+    @Override
+    public Message getMessage() {
+        return null;
     }
 
     @Override

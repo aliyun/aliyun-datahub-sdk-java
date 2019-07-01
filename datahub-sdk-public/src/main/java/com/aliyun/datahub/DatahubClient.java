@@ -4,8 +4,10 @@ import com.aliyun.datahub.auth.AliyunAccount;
 import com.aliyun.datahub.client.DatahubClientBuilder;
 import com.aliyun.datahub.client.common.DatahubConfig;
 import com.aliyun.datahub.client.http.HttpConfig;
+import com.aliyun.datahub.client.http.interceptor.InterceptorWrapper;
 import com.aliyun.datahub.client.impl.AbstractDatahubClient;
-import com.aliyun.datahub.client.impl.DatahubInterceptorHandler;
+import com.aliyun.datahub.client.impl.interceptor.DatahubAuthInterceptor;
+import com.aliyun.datahub.client.impl.interceptor.DatahubResponseInterceptor;
 import com.aliyun.datahub.client.model.SinkConfig;
 import com.aliyun.datahub.client.model.SubscriptionOffset;
 import com.aliyun.datahub.common.data.Field;
@@ -57,8 +59,6 @@ public class DatahubClient {
 
         HttpConfig httpConfig = new HttpConfig()
                 .setConnTimeout(conf.getSocketConnectTimeout() * 1000)
-                .setMaxConnPerRoute(conf.getConnectionsPerEndpoint())
-                .setMaxConnTotal(conf.getTotalConnections())
                 .setReadTimeout(conf.getSocketTimeout() * 1000)
                 .setProxyUri(conf.getProxyUri())
                 .setProxyUsername(conf.getProxyUsername())
@@ -93,14 +93,11 @@ public class DatahubClient {
      * @param account aliyun account
      */
     public void setAccount(com.aliyun.datahub.auth.AliyunAccount account) {
-        DatahubInterceptorHandler interceptorHandler = new DatahubInterceptorHandler(
-                new com.aliyun.datahub.client.auth.AliyunAccount(
-                        account.getAccessId(),
-                        account.getAccessKey(),
-                        account.getSecurityToken()
-                )
-        );
-        ((AbstractDatahubClient)proxyClient).setInterceptor(interceptorHandler);
+        InterceptorWrapper interceptor = new InterceptorWrapper()
+                .setAuth(new DatahubAuthInterceptor(new com.aliyun.datahub.client.auth.AliyunAccount(account.getAccessId(), account.getAccessKey(), account.getSecurityToken()), null))
+                .setResponse(new DatahubResponseInterceptor());
+
+        ((AbstractDatahubClient)proxyClient).innerSetInterceptor(interceptor);
     }
 
     public String getSourceIpForConsole() {
@@ -1473,8 +1470,8 @@ public class DatahubClient {
         return callWrapper(new Callable<GetDataConnectorShardStatusResult>() {
             @Override
             public GetDataConnectorShardStatusResult call() throws Exception {
-                return new GetDataConnectorShardStatusResult(proxyClient.getConnectorShardStatus(request.getProjectName(),
-                        request.getTopicName(), newType, request.getShardId()));
+                return new GetDataConnectorShardStatusResult(request.getShardId(), proxyClient.getConnectorShardStatus(request.getProjectName(),
+                        request.getTopicName(), newType));
             }
         });
     }

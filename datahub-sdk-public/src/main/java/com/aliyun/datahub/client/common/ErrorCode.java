@@ -17,6 +17,7 @@ public abstract class ErrorCode {
     /**
      * for later arrange error code
      */
+    public static final String SEEK_OUT_OF_RANGE = "SeekOutOfRange";
     public static final String RESOURCE_ALREADY_EXIST = "ResourceAlreadyExist";
     public static final String PROJECT_ALREADY_EXIST = "ProjectAlreadyExist";
     public static final String TOPIC_ALREADY_EXIST = "TopicAlreadyExist";

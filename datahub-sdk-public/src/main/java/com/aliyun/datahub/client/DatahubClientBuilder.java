@@ -7,6 +7,7 @@ import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.impl.DatahubClientPbImpl;
 
 public class DatahubClientBuilder {
+    private String userAgent;
     private DatahubConfig datahubConfig;
     private HttpConfig httpConfig;
 
@@ -35,6 +36,15 @@ public class DatahubClientBuilder {
         return this;
     }
 
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    public DatahubClientBuilder setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
+        return this;
+    }
+
     public DatahubClient build() {
         if (datahubConfig == null) {
             throw new InvalidParameterException("DatahubConfig is not set");
@@ -45,11 +55,11 @@ public class DatahubClientBuilder {
 
         if (datahubConfig.isEnableBinary()) {
             return new DatahubClientPbImpl(datahubConfig.getEndpoint(),
-                    datahubConfig.getAccount(), httpConfig);
+                    datahubConfig.getAccount(), httpConfig, userAgent);
         }
 
         return new DatahubClientJsonImpl(datahubConfig.getEndpoint(),
-                datahubConfig.getAccount(), httpConfig);
+                datahubConfig.getAccount(), httpConfig, userAgent);
     }
 
 }

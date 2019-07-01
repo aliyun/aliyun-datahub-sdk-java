@@ -4,7 +4,6 @@ import com.aliyun.datahub.client.auth.Account;
 import com.aliyun.datahub.client.exception.DatahubClientException;
 import com.aliyun.datahub.client.exception.InvalidParameterException;
 import com.aliyun.datahub.client.exception.NoPermissionException;
-import com.aliyun.datahub.client.http.Entity;
 import com.aliyun.datahub.client.http.HttpConfig;
 import com.aliyun.datahub.client.impl.request.*;
 import com.aliyun.datahub.client.model.*;
@@ -16,13 +15,10 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
-
-import static com.aliyun.datahub.client.common.DatahubConstant.*;
 
 public class DatahubClientJsonImpl extends AbstractDatahubClient {
-    public DatahubClientJsonImpl(String endpoint, Account account, HttpConfig httpConfig) {
-        super(endpoint, account, httpConfig);
+    public DatahubClientJsonImpl(String endpoint, Account account, HttpConfig httpConfig, String userAgent) {
+        super(endpoint, account, httpConfig, userAgent);
     }
 
     @Override
@@ -30,26 +26,16 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (!FormatUtils.checkProjectName(projectName)) {
             throw new InvalidParameterException("ProjectName format is invalid");
         }
-
-        final String path = String.format(PROJECT_URL, projectName);
-        return callWrapper(new Callable<GetProjectResult>() {
-            @Override
-            public GetProjectResult call() throws Exception {
-                GetProjectResult result = createRequest().path(path).get(GetProjectResult.class);
-                result.setProjectName(projectName.toLowerCase());
-                return result;
-            }
-        });
+        GetProjectResult result = callWrapper(getService().getProject(projectName));
+        if (result != null) {
+            result.setProjectName(projectName.toLowerCase());
+        }
+        return result;
     }
 
     @Override
     public ListProjectResult listProject() {
-        return callWrapper(new Callable<ListProjectResult>() {
-            @Override
-            public ListProjectResult call() throws Exception {
-                return createRequest().path(PROJECTS_URL).get(ListProjectResult.class);
-            }
-        });
+        return callWrapper(getService().listProject());
     }
 
     @Override
@@ -62,15 +48,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Comment format is inivalid");
         }
 
-        final String path = String.format(PROJECT_URL, projectName.toLowerCase());
         final CreateProjectRequest request = new CreateProjectRequest().setComment(comment);
-        return callWrapper(new Callable<CreateProjectResult>() {
-            @Override
-            public CreateProjectResult call() throws Exception {
-                return createRequest().path(path)
-                        .post(Entity.json(request), CreateProjectResult.class);
-            }
-        });
+        return callWrapper(getService().createProject(projectName, request));
     }
 
     @Override
@@ -83,14 +62,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Comment format is inivalid");
         }
 
-        final String path = String.format(PROJECT_URL, projectName);
         final UpdateProjectRequest request = new UpdateProjectRequest().setComment(comment);
-        return callWrapper(new Callable<UpdateProjectResult>() {
-            @Override
-            public UpdateProjectResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), UpdateProjectResult.class);
-            }
-        });
+        return callWrapper(getService().updateProject(projectName, request));
     }
 
     @Override
@@ -98,14 +71,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (!FormatUtils.checkProjectName(projectName)) {
             throw new InvalidParameterException("ProjectName format is invalid");
         }
-
-        final String path = String.format(PROJECT_URL, projectName);
-        return callWrapper(new Callable<DeleteProjectResult>() {
-            @Override
-            public DeleteProjectResult call() throws Exception {
-                return createRequest().path(path).delete(DeleteProjectResult.class);
-            }
-        });
+        return callWrapper(getService().deleteProject(projectName));
     }
 
     @Override
@@ -181,7 +147,6 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Record type is invalid");
         }
 
-        final String path = String.format(TOPIC_URL, projectName.toLowerCase(), topicName.toLowerCase());
         final CreateTopicRequest request = new CreateTopicRequest()
                 .setShardCount(shardCount)
                 .setLifeCycle(lifeCycle)
@@ -189,12 +154,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
                 .setRecordSchema(recordSchema)
                 .setComment(comment);
 
-        return callWrapper(new Callable<CreateTopicResult>() {
-            @Override
-            public CreateTopicResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), CreateTopicResult.class);
-            }
-        });
+        return callWrapper(getService().createTopic(projectName, topicName, request));
     }
 
     @Override
@@ -211,15 +171,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Comment format is inivalid");
         }
 
-        final String path = String.format(TOPIC_URL, projectName, topicName);
         final UpdateTopicRequest request = new UpdateTopicRequest()
                 .setComment(comment);
-        return callWrapper(new Callable<UpdateTopicResult>() {
-            @Override
-            public UpdateTopicResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), UpdateTopicResult.class);
-            }
-        });
+        return callWrapper(getService().updateTopic(projectName, topicName, request));
     }
 
     @Override
@@ -232,19 +186,12 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("TopicName format is invalid");
         }
 
-        final String fProject = projectName;
-        final String fTopic = topicName;
-        final String path = String.format(TOPIC_URL, projectName, topicName);
-        return callWrapper(new Callable<GetTopicResult>() {
-            @Override
-            public GetTopicResult call() throws Exception {
-                GetTopicResult result =
-                        createRequest().path(path).get(GetTopicResult.class);
-                result.setProjectName(fProject);
-                result.setTopicName(fTopic);
-                return result;
-            }
-        });
+        GetTopicResult result = callWrapper(getService().getTopic(projectName, topicName));
+        if (result != null) {
+            result.setProjectName(projectName);
+            result.setTopicName(topicName);
+        }
+        return result;
     }
 
     @Override
@@ -256,14 +203,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (!FormatUtils.checkTopicName(topicName)) {
             throw new InvalidParameterException("TopicName format is invalid");
         }
-
-        final String path = String.format(TOPIC_URL, projectName, topicName);
-        return callWrapper(new Callable<DeleteTopicResult>() {
-            @Override
-            public DeleteTopicResult call() throws Exception {
-                return createRequest().path(path).delete(DeleteTopicResult.class);
-            }
-        });
+        return callWrapper(getService().deleteTopic(projectName, topicName));
     }
 
     @Override
@@ -271,14 +211,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (!FormatUtils.checkProjectName(projectName)) {
             throw new InvalidParameterException("ProjectName format is invalid");
         }
-
-        final String path = String.format(TOPICS_URL, projectName);
-        return callWrapper(new Callable<ListTopicResult>() {
-            @Override
-            public ListTopicResult call() throws Exception {
-                return createRequest().path(path).get(ListTopicResult.class);
-            }
-        });
+        return callWrapper(getService().listTopic(projectName));
     }
 
     @Override
@@ -291,23 +224,18 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("TopicName format is invalid");
         }
 
-        final String path = String.format(SHARDS_URL, projectName, topicName);
-        return callWrapper(new Callable<ListShardResult>() {
-            @Override
-            public ListShardResult call() throws Exception {
-                ListShardResult result = createRequest().path(path).get(ListShardResult.class);
-                // filter as api response is not accurate
-                for (ShardEntry entry : result.getShards()) {
-                    if (MAX_SHARD_ID.equals(entry.getLeftShardId())) {
-                        entry.setLeftShardId(null);
-                    }
-                    if (MAX_SHARD_ID.equals(entry.getRightShardId())) {
-                        entry.setRightShardId(null);
-                    }
+        ListShardResult result = callWrapper(getService().listShard(projectName, topicName));
+        if (result != null) {
+            for (ShardEntry entry : result.getShards()) {
+                if (MAX_SHARD_ID.equals(entry.getLeftShardId())) {
+                    entry.setLeftShardId(null);
                 }
-                return result;
+                if (MAX_SHARD_ID.equals(entry.getRightShardId())) {
+                    entry.setRightShardId(null);
+                }
             }
-        });
+        }
+        return result;
     }
 
     @Override
@@ -370,13 +298,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
                 .setShardId(shardId)
                 .setSplitKey(splitKey);
 
-        final String path = String.format(SHARDS_URL, projectName, topicName);
-        return callWrapper(new Callable<SplitShardResult>() {
-            @Override
-            public SplitShardResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), SplitShardResult.class);
-            }
-        });
+        return callWrapper(getService().splitShard(projectName, topicName, request));
     }
 
     @Override
@@ -396,14 +318,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         final MergeShardRequest request = new MergeShardRequest()
                 .setShardId(shardId)
                 .setAdjacentShardId(adjacentShardId);
-
-        final String path = String.format(SHARDS_URL, projectName, topicName);
-        return callWrapper(new Callable<MergeShardResult>() {
-            @Override
-            public MergeShardResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), MergeShardResult.class);
-            }
-        });
+        return callWrapper(getService().mergeShard(projectName, topicName, request));
     }
 
     @Override
@@ -433,17 +348,10 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Cursor type or parameter is invalid");
         }
 
-        final String path = String.format(SHARD_URL, projectName, topicName, shardId);
         final GetCursorRequest request = new GetCursorRequest()
                 .setType(type)
                 .setParameter(parameter);
-
-        return callWrapper(new Callable<GetCursorResult>() {
-            @Override
-            public GetCursorResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), GetCursorResult.class);
-            }
-        });
+        return callWrapper(getService().getCursor(projectName, topicName, shardId, request));
     }
 
     @Override
@@ -460,37 +368,33 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Records is null or empty");
         }
 
-        final String path = String.format(SHARDS_URL, projectName, topicName);
         final PutRecordsRequest request = new PutRecordsRequest().setRecords(records);
 
-        return callWrapper(new Callable<PutRecordsResult>() {
-            @Override
-            public PutRecordsResult call() throws Exception {
-                Timer.Context context = PUT_LATENCY_TIMER == null ? null : PUT_LATENCY_TIMER.time();
-                try {
-                    PutRecordsResult result = createRequest().path(path).post(Entity.json(request), PutRecordsResult.class);
-                    if (result.getFailedRecordCount() > 0) {
-                        List<RecordEntry> failedRecords = new ArrayList<>();
-                        for (PutErrorEntry errorEntry : result.getPutErrorEntries()) {
-                            failedRecords.add(request.getRecords().get(errorEntry.getIndex()));
-                        }
-                        result.setFailedRecords(failedRecords);
+        Timer.Context context = PUT_LATENCY_TIMER == null ? null : PUT_LATENCY_TIMER.time();
+        try {
+            PutRecordsResult result = callWrapper(getService().putRecords(projectName, topicName, request));
+            if (result != null) {
+                if (result.getFailedRecordCount() > 0) {
+                    List<RecordEntry> failedRecords = new ArrayList<>();
+                    for (PutErrorEntry errorEntry : result.getPutErrorEntries()) {
+                        failedRecords.add(request.getRecords().get(errorEntry.getIndex()));
                     }
-                    if (PUT_QPS_METER != null) {
-                        PUT_QPS_METER.mark(1);
-                    }
+                    result.setFailedRecords(failedRecords);
+                }
+                if (PUT_QPS_METER != null) {
+                    PUT_QPS_METER.mark(1);
+                }
 
-                    if (PUT_RPS_METER != null) {
-                        PUT_RPS_METER.mark(records.size() - result.getFailedRecordCount());
-                    }
-                    return result;
-                } finally {
-                    if (context != null) {
-                        context.stop();
-                    }
+                if (PUT_RPS_METER != null) {
+                    PUT_RPS_METER.mark(records.size() - result.getFailedRecordCount());
                 }
             }
-        });
+            return result;
+        } finally {
+            if (context != null) {
+                context.stop();
+            }
+        }
     }
 
     @Override
@@ -515,35 +419,34 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         limit = Math.max(MIN_FETCH_SIZE, limit);
         limit = Math.min(MAX_FETCH_SIZE, limit);
 
-        final String path = String.format(SHARD_URL, projectName, topicName, shardId);
         final GetRecordsRequest request = new GetRecordsRequest().setCursor(cursor).setLimit(limit);
 
-        return callWrapper(new Callable<GetRecordsResult>() {
-            @Override
-            public GetRecordsResult call() throws Exception {
-                final Timer.Context context = GET_LATENCY_TIMER == null ? null : GET_LATENCY_TIMER.time();
-                try {
-                    GetRecordsResult result = createRequest().path(path).post(Entity.json(request), GetRecordsResult.class);
-                    if (result.getRecordCount() > 0) {
-                        for (RecordEntry entry : result.getRecords()) {
-                            entry.setShardId(shardId);
-                        }
-                    }
-                    if (GET_QPS_METER != null) {
-                        GET_QPS_METER.mark(1);
-                    }
-
-                    if (GET_RPS_METER != null) {
-                        GET_RPS_METER.mark(result.getRecordCount());
-                    }
-                    return result;
-                } finally {
-                    if (context != null) {
-                        context.stop();
+        final Timer.Context context = GET_LATENCY_TIMER == null ? null : GET_LATENCY_TIMER.time();
+        try {
+            GetRecordsResult result = callWrapper(getService().getRecords(projectName, topicName, shardId, request));
+            if (result != null) {
+                if (result.getRecordCount() > 0) {
+                    long recordIndex = 0;
+                    for (RecordEntry entry : result.getRecords()) {
+                        long sequence = result.getStartSequence() + recordIndex++;
+                        entry.setShardId(shardId);
+                        entry.setSequence(entry.getSequence() == -1 ? sequence : entry.getSequence());
                     }
                 }
+                if (GET_QPS_METER != null) {
+                    GET_QPS_METER.mark(1);
+                }
+
+                if (GET_RPS_METER != null) {
+                    GET_RPS_METER.mark(result.getRecordCount());
+                }
             }
-        });
+            return result;
+        } finally {
+            if (context != null) {
+                context.stop();
+            }
+        }
     }
 
     @Override
@@ -576,15 +479,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("append field must allow null value");
         }
 
-        final String path = String.format(TOPIC_URL, projectName, topicName);
         final AppendFieldRequest request = new AppendFieldRequest().setFieldName(field.getName()).setFieldType(field.getType());
-
-        return callWrapper(new Callable<AppendFieldResult>() {
-            @Override
-            public AppendFieldResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), AppendFieldResult.class);
-            }
-        });
+        return callWrapper(getService().appendField(projectName, topicName, request));
     }
 
     @Override
@@ -601,15 +497,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ShardId format is invalid");
         }
 
-        final String path = String.format(SHARD_URL, projectName, topicName, shardId);
         final GetMeterInfoRequest request = new GetMeterInfoRequest();
-
-        return callWrapper(new Callable<GetMeterInfoResult>() {
-            @Override
-            public GetMeterInfoResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), GetMeterInfoResult.class);
-            }
-        });
+        return callWrapper(getService().getMeterInfo(projectName, topicName, shardId, request));
     }
 
     @Override
@@ -631,18 +520,13 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Config is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final CreateConnectorRequest request = new CreateConnectorRequest()
                 .setSinkStartTime(sinkStartTime)
                 .setColumnFields(columnFields)
                 .setType(connectorType)
                 .setConfig(config);
-        return callWrapper(new Callable<CreateConnectorResult>() {
-            @Override
-            public CreateConnectorResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), CreateConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().createConnector(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -659,13 +543,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConnectorType is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
-        return callWrapper(new Callable<GetConnectorResult>() {
-            @Override
-            public GetConnectorResult call() throws Exception {
-                return createRequest().path(path).get(GetConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().getConnector(projectName, topicName, connectorType.name().toLowerCase()));
     }
 
     @Override
@@ -682,14 +560,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConnectorType is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final UpdateConnectorRequest request = new UpdateConnectorRequest().setConfig(config);
-        return callWrapper(new Callable<UpdateConnectorResult>() {
-            @Override
-            public UpdateConnectorResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), UpdateConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().updateConnector(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -702,13 +575,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("TopicName format is invalid");
         }
 
-        final String path = String.format(CONNECTORS_URL, projectName, topicName);
-        return callWrapper(new Callable<ListConnectorResult>() {
-            @Override
-            public ListConnectorResult call() throws Exception {
-                return createRequest().path(path).get(ListConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().listConnector(projectName, topicName));
     }
 
     @Override
@@ -725,13 +592,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConnectorType is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
-        return callWrapper(new Callable<DeleteConnectorResult>() {
-            @Override
-            public DeleteConnectorResult call() throws Exception {
-                return createRequest().path(path).delete(DeleteConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().deleteConnector(projectName, topicName, connectorType.name().toLowerCase()));
     }
 
     @Override
@@ -748,15 +609,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Only sink maxcompute supports done time");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
-        return callWrapper(new Callable<GetConnectorDoneTimeResult>() {
-            @Override
-            public GetConnectorDoneTimeResult call() throws Exception {
-                return createRequest().path(path)
-                        .queryParam("donetime", "")
-                        .get(GetConnectorDoneTimeResult.class);
-            }
-        });
+        return callWrapper(getService().getConnectorDoneTime(projectName, topicName, connectorType.name().toLowerCase()));
     }
 
     @Override
@@ -778,14 +631,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConnectorType is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final ReloadConnectorRequest request = new ReloadConnectorRequest().setShardId(shardId);
-        return callWrapper(new Callable<ReloadConnectorResult>() {
-            @Override
-            public ReloadConnectorResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), ReloadConnectorResult.class);
-            }
-        });
+        return callWrapper(getService().reloadConnector(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -802,14 +650,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("connectorState is invalid");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final UpdateConnectorStateRequest request = new UpdateConnectorStateRequest().setState(connectorState);
-        return callWrapper(new Callable<UpdateConnectorStateResult>() {
-            @Override
-            public UpdateConnectorStateResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), UpdateConnectorStateResult.class);
-            }
-        });
+        return callWrapper(getService().updateConnectorState(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -826,18 +669,14 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ShardId format is invalid");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final UpdateConnectorOffsetRequest request = new UpdateConnectorOffsetRequest().setShardId(shardId)
                 .setTimestamp(offset.getTimestamp()).setSequence(offset.getSequence());
-        return callWrapper(new Callable<UpdateConnectorOffsetResult>() {
-            @Override
-            public UpdateConnectorOffsetResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), UpdateConnectorOffsetResult.class);
-            }
-        });
+        return callWrapper(getService().updateConnectorOffset(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
-    public GetConnectorShardStatusResult getConnectorShardStatusNotForUser(String projectName, String topicName, ConnectorType connectorType) {
+    @Override
+    public GetConnectorShardStatusResult getConnectorShardStatus(String projectName, String topicName, ConnectorType connectorType) {
         if (!FormatUtils.checkProjectName(projectName)) {
             throw new InvalidParameterException("ProjectName format is invalid");
         }
@@ -850,15 +689,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConnectorType is null");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final GetConnectorShardStatusRequest request = new GetConnectorShardStatusRequest();
-
-        return callWrapper(new Callable<GetConnectorShardStatusResult>() {
-            @Override
-            public GetConnectorShardStatusResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), GetConnectorShardStatusResult.class);
-            }
-        });
+        return callWrapper(getService().getConnectorShardStatus(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -879,15 +712,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ShardId format is invalid");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final GetConnectorShardStatusRequest request = new GetConnectorShardStatusRequest().setShardId(shardId);
-
-        return callWrapper(new Callable<ConnectorShardStatusEntry>() {
-            @Override
-            public ConnectorShardStatusEntry call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), ConnectorShardStatusEntry.class);
-            }
-        });
+        return callWrapper(getService().getConnectorShardStatusByShard(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -908,15 +735,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("FieldName is invalid");
         }
 
-        final String path = String.format(CONNECTOR_URL, projectName, topicName, connectorType.name().toLowerCase());
         final AppendConnectorFieldRequest request = new AppendConnectorFieldRequest().setFieldName(fieldName.toLowerCase());
-
-        return callWrapper(new Callable<AppendConnectorFieldResult>() {
-            @Override
-            public AppendConnectorFieldResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), AppendConnectorFieldResult.class);
-            }
-        });
+        return callWrapper(getService().appendConnectorField(projectName, topicName,
+                connectorType.name().toLowerCase(), request));
     }
 
     @Override
@@ -933,14 +754,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Comment format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTIONS_URL, projectName, topicName);
         final CreateSubscriptionRequest request = new CreateSubscriptionRequest().setComment(comment);
-        return callWrapper(new Callable<CreateSubscriptionResult>() {
-            @Override
-            public CreateSubscriptionResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), CreateSubscriptionResult.class);
-            }
-        });
+        return callWrapper(getService().createSubscription(projectName, topicName, request));
     }
 
     @Override
@@ -957,13 +772,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("SubId format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, subId);
-        return callWrapper(new Callable<GetSubscriptionResult>() {
-            @Override
-            public GetSubscriptionResult call() throws Exception {
-                return createRequest().path(path).get(GetSubscriptionResult.class);
-            }
-        });
+        return callWrapper(getService().getSubscription(projectName, topicName, subId));
     }
 
     @Override
@@ -979,14 +788,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (StringUtils.isEmpty(subId)) {
             throw new InvalidParameterException("SubId format is invalid");
         }
-
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, subId);
-        return callWrapper(new Callable<DeleteSubscriptionResult>() {
-            @Override
-            public DeleteSubscriptionResult call() throws Exception {
-                return createRequest().path(path).delete(DeleteSubscriptionResult.class);
-            }
-        });
+        return callWrapper(getService().deleteSubscription(projectName, topicName, subId));
     }
 
     @Override
@@ -1003,17 +805,10 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Page format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTIONS_URL, projectName, topicName);
         final ListSubscriptionRequest request = new ListSubscriptionRequest()
                 .setPageNum(pageNum)
                 .setPageSize(pageSize);
-
-        return callWrapper(new Callable<ListSubscriptionResult>() {
-            @Override
-            public ListSubscriptionResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), ListSubscriptionResult.class);
-            }
-        });
+        return callWrapper(getService().listSubscription(projectName, topicName, request));
     }
 
     @Override
@@ -1034,16 +829,10 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Comment format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, subId);
         final UpdateSubscriptionRequest request = new UpdateSubscriptionRequest()
                 .setComment(comment);
-
-        return callWrapper(new Callable<UpdateSubscriptionResult>() {
-            @Override
-            public UpdateSubscriptionResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), UpdateSubscriptionResult.class);
-            }
-        });
+        return callWrapper(getService().updateSubscription(projectName, topicName,
+                subId, request));
     }
 
     @Override
@@ -1064,16 +853,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("State is null");
         }
 
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, subId);
         final UpdateSubscriptionRequest request = new UpdateSubscriptionRequest()
                 .setState(state);
-
-        return callWrapper(new Callable<UpdateSubscriptionStateResult>() {
-            @Override
-            public UpdateSubscriptionStateResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), UpdateSubscriptionStateResult.class);
-            }
-        });
+        return callWrapper(getService().updateSubscriptionState(projectName, topicName, subId, request));
     }
 
     @Override
@@ -1094,14 +876,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ShardIds is null");
         }
 
-        final String path = String.format(SUBSCRIPTION_OFFSET_URL, projectName, topicName, subId);
         final OpenSubscriptionSessionRequest request = new OpenSubscriptionSessionRequest().setShardIds(shardIds);
-        return callWrapper(new Callable<OpenSubscriptionSessionResult>() {
-            @Override
-            public OpenSubscriptionSessionResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), OpenSubscriptionSessionResult.class);
-            }
-        });
+        return callWrapper(getService().openSubscriptionSession(projectName, topicName, subId, request));
     }
 
     @Override
@@ -1118,14 +894,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("SubId format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTION_OFFSET_URL, projectName, topicName, subId);
         final GetSubscriptionOffsetRequest request = new GetSubscriptionOffsetRequest().setShardIds(shardIds);
-        return callWrapper(new Callable<GetSubscriptionOffsetResult>() {
-            @Override
-            public GetSubscriptionOffsetResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), GetSubscriptionOffsetResult.class);
-            }
-        });
+        return callWrapper(getService().getSubscriptionOffset(projectName, topicName, subId, request));
     }
 
     @Override
@@ -1146,14 +916,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Offsets is null");
         }
 
-        final String path = String.format(SUBSCRIPTION_OFFSET_URL, projectName, topicName, subId);
         final CommitSubscriptionOffsetRequest request = new CommitSubscriptionOffsetRequest().setOffsets(offsets);
-        return callWrapper(new Callable<CommitSubscriptionOffsetResult>() {
-            @Override
-            public CommitSubscriptionOffsetResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), CommitSubscriptionOffsetResult.class);
-            }
-        });
+        return callWrapper(getService().commitSubscriptionOffset(projectName, topicName, subId, request));
     }
 
     @Override
@@ -1174,14 +938,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("Offsets is null");
         }
 
-        final String path = String.format(SUBSCRIPTION_OFFSET_URL, projectName, topicName, subId);
         final ResetSubscriptionOffsetRequest request = new ResetSubscriptionOffsetRequest().setOffsets(offsets);
-        return callWrapper(new Callable<ResetSubscriptionOffsetResult>() {
-            @Override
-            public ResetSubscriptionOffsetResult call() throws Exception {
-                return createRequest().path(path).put(Entity.json(request), ResetSubscriptionOffsetResult.class);
-            }
-        });
+        return callWrapper(getService().resetSubscriptionOffset(projectName, topicName, subId, request));
     }
 
     @Override
@@ -1202,15 +960,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("HoldShardList is null");
         }
 
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, consumerGroup);
         final HeartbeatRequest request = new HeartbeatRequest().setConsumerId(consumerId).setVersionId(versionId)
                 .setHoldShardList(holdShardList).setReadEndShardList(readEndShardList);
-        return callWrapper(new Callable<HeartbeatResult>() {
-            @Override
-            public HeartbeatResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), HeartbeatResult.class);
-            }
-        });
+        return callWrapper(getService().heartbeat(projectName, topicName, consumerGroup, request));
     }
 
     @Override
@@ -1227,14 +979,8 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
             throw new InvalidParameterException("ConsumerGroup format is invalid");
         }
 
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, consumerGroup);
         final JoinGroupRequest request = new JoinGroupRequest().setSessionTimeout(sessionTimeout);
-        return callWrapper(new Callable<JoinGroupResult>() {
-            @Override
-            public JoinGroupResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), JoinGroupResult.class);
-            }
-        });
+        return callWrapper(getService().joinGroup(projectName, topicName, consumerGroup, request));
     }
 
     @Override
@@ -1250,15 +996,9 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (StringUtils.isEmpty(consumerGroup)) {
             throw new InvalidParameterException("ConsumerGroup format is invalid");
         }
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, consumerGroup);
         final SyncGroupRequest request = new SyncGroupRequest().setConsumerId(consumerId).setVersionId(versionId)
                 .setReleaseShardList(releaseShardList).setReadEndShardList(readEndShardList);
-        return callWrapper(new Callable<SyncGroupResult>() {
-            @Override
-            public SyncGroupResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), SyncGroupResult.class);
-            }
-        });
+        return callWrapper(getService().syncGroup(projectName, topicName, consumerGroup, request));
     }
 
     @Override
@@ -1274,13 +1014,7 @@ public class DatahubClientJsonImpl extends AbstractDatahubClient {
         if (StringUtils.isEmpty(consumerGroup)) {
             throw new InvalidParameterException("ConsumerGroup format is invalid");
         }
-        final String path = String.format(SUBSCRIPTION_URL, projectName, topicName, consumerGroup);
         final LeaveGroupRequest request = new LeaveGroupRequest().setConsumerId(consumerId).setVersionId(versionId);
-        return callWrapper(new Callable<LeaveGroupResult>() {
-            @Override
-            public LeaveGroupResult call() throws Exception {
-                return createRequest().path(path).post(Entity.json(request), LeaveGroupResult.class);
-            }
-        });
+        return callWrapper(getService().leaveGroup(projectName, topicName, consumerGroup, request));
     }
 }

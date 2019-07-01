@@ -1,7 +1,7 @@
 package com.aliyun.datahub.client.auth;
 
-import com.aliyun.datahub.client.http.HttpRequest;
+import okhttp3.Request;
 
 public interface AuthSigner {
-    String genAuthSignature(HttpRequest request);
+    String genAuthSignature(Request request);
 }

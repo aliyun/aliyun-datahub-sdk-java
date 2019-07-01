@@ -22,19 +22,6 @@ import java.util.Map;
  * }
  */
 public interface DatahubClient {
-
-    /**
-     * Set endpoint. Not thread-safe
-     * @param endpoint The endpoint of client
-     */
-    void setEndpoint(String endpoint);
-
-    /**
-     * Set User-Agent header. Not thread-safe
-     * @param userAgent The http User-Agent header
-     */
-    void setUserAgent(String userAgent);
-
     /**
      * Get the information of the specified project.
      *
@@ -452,6 +439,17 @@ public interface DatahubClient {
      * @throws DatahubClientException Throws DatahubClientException
      */
     UpdateConnectorOffsetResult updateConnectorOffset(String projectName, String topicName, ConnectorType connectorType, String shardId, ConnectorOffset offset);
+
+    /**
+     * Get the detail information of the shard task which belongs to the specified data connector.
+     *
+     * @param projectName The name of the project.
+     * @param topicName The name of the topic.
+     * @param connectorType The type of the connector.
+     * @return {@link GetConnectorShardStatusResult} The detail information of the shard task.
+     * @throws DatahubClientException Throws DatahubClientException
+     */
+    GetConnectorShardStatusResult getConnectorShardStatus(String projectName, String topicName, ConnectorType connectorType);
 
     /**
      *

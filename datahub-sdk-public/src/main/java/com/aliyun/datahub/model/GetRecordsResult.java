@@ -30,9 +30,11 @@ public class GetRecordsResult extends Result {
 
     public List<RecordEntry> getRecords() {
         List<RecordEntry> recordEntryList = new ArrayList<>();
+        long recordIndex = 0;
         if (proxyResult.getRecords() != null) {
             for (com.aliyun.datahub.client.model.RecordEntry entry : proxyResult.getRecords()) {
-                RecordEntry oldEntry = ModelConvertToOld.convertRecordEntry(entry);
+                long sequence = proxyResult.getStartSequence() + recordIndex++;
+                RecordEntry oldEntry = ModelConvertToOld.convertRecordEntry(entry, sequence);
                 recordEntryList.add(oldEntry);
             }
         }

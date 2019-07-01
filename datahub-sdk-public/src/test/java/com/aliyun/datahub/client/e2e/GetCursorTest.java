@@ -2,6 +2,7 @@ package com.aliyun.datahub.client.e2e;
 
 import com.aliyun.datahub.client.exception.InvalidParameterException;
 import com.aliyun.datahub.client.exception.ResourceNotFoundException;
+import com.aliyun.datahub.client.exception.SeekOutOfRangeException;
 import com.aliyun.datahub.client.model.BlobRecordData;
 import com.aliyun.datahub.client.model.CursorType;
 import com.aliyun.datahub.client.model.GetCursorResult;
@@ -54,7 +55,7 @@ public class GetCursorTest extends BaseTest {
             getCursorResult = client.getCursor(TEST_PROJECT_NAME, blobTopicName, "0", CursorType.SYSTEM_TIME, timestamp + 10000);
             fail("GetCursor with future time should throw exception");
         } catch (Exception e) {
-            Assert.assertTrue(e instanceof InvalidParameterException);
+            Assert.assertTrue(e instanceof SeekOutOfRangeException);
         }
     }
 
@@ -64,7 +65,7 @@ public class GetCursorTest extends BaseTest {
             client.getCursor(TEST_PROJECT_NAME, blobTopicName, "0", CursorType.SEQUENCE, 1);
             fail("GetCusor with invalid sequence should throw exception");
         } catch (Exception e) {
-            Assert.assertTrue(e instanceof InvalidParameterException);
+            Assert.assertTrue(e instanceof SeekOutOfRangeException);
         }
     }
 

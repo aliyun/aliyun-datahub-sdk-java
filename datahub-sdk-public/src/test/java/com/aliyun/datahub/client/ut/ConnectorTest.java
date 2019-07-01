@@ -1,6 +1,5 @@
 package com.aliyun.datahub.client.ut;
 
-import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.model.*;
 import org.mockserver.model.Header;
 import org.testng.Assert;
@@ -338,7 +337,7 @@ public class ConnectorTest extends MockServer {
                 ).withBody("{\"ShardStatusInfos\":{\"0\":{\"CurrentSequence\":10,\"CurrentTimestamp\":-1,\"DiscardCount\":0,\"LastErrorMessage\":\"error_message\",\"ShardId\":\"0\",\"State\":\"CONTEXT_PLANNED\",\"UpdateTime\":1542940638},\"1\":{\"CurrentSequence\":11,\"CurrentTimestamp\":-1,\"DiscardCount\":0,\"LastErrorMessage\":\"\",\"ShardId\":\"1\",\"State\":\"CONTEXT_PLANNED\",\"UpdateTime\":1542940638}}}")
         );
 
-        GetConnectorShardStatusResult getDataConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser("test_project", "test_topic", ConnectorType.SINK_ODPS);
+        GetConnectorShardStatusResult getDataConnectorShardStatusResult = client.getConnectorShardStatus("test_project", "test_topic", ConnectorType.SINK_ODPS);
         Assert.assertEquals(2, getDataConnectorShardStatusResult.getStatusEntryMap().size());
         Assert.assertEquals(10, getDataConnectorShardStatusResult.getStatusEntryMap().get("0").getCurrSequence());
         Assert.assertEquals("error_message", getDataConnectorShardStatusResult.getStatusEntryMap().get("0").getLastErrorMessage());

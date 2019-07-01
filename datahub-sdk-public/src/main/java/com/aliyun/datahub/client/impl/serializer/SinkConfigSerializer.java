@@ -43,6 +43,7 @@ public class SinkConfigSerializer extends JsonSerializer<SinkConfig> {
         }
         jsonGenerator.writeStringField("AccessId", config.getAccessId());
         jsonGenerator.writeStringField("AccessKey", config.getAccessKey());
+
         if (config.getPartitionMode() == null) {
             throw new InvalidParameterException("PartitionMode should not null");
         }
@@ -79,9 +80,14 @@ public class SinkConfigSerializer extends JsonSerializer<SinkConfig> {
     private void serializeDatahubConfig(SinkDatahubConfig config, JsonGenerator jsonGenerator) throws IOException, JsonProcessingException {
         jsonGenerator.writeStartObject();
 
-        jsonGenerator.writeStringField("DatahubEndpoint", config.getEndpoint());
+        jsonGenerator.writeStringField("Endpoint", config.getEndpoint());
         jsonGenerator.writeStringField("Project", config.getProjectName());
         jsonGenerator.writeStringField("Topic", config.getTopicName());
+        jsonGenerator.writeStringField("AuthMode", config.getAuthMode().name().toLowerCase());
+        if (config.getAuthMode() == SinkConfig.AuthMode.AK) {
+            jsonGenerator.writeStringField("AccessId", config.getAccessId());
+            jsonGenerator.writeStringField("AccessKey", config.getAccessKey());
+        }
 
         jsonGenerator.writeEndObject();
     }

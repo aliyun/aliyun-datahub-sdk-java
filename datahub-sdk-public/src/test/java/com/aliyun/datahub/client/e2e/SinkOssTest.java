@@ -3,7 +3,6 @@ package com.aliyun.datahub.client.e2e;
 import com.aliyun.datahub.client.e2e.common.Configure;
 import com.aliyun.datahub.client.e2e.common.Constant;
 import com.aliyun.datahub.client.exception.InvalidParameterException;
-import com.aliyun.datahub.client.impl.DatahubClientJsonImpl;
 import com.aliyun.datahub.client.model.*;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -128,7 +127,7 @@ public class SinkOssTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // stop connector
         client.updateConnectorState(TEST_PROJECT_NAME, tupleTopicName, connectorType, ConnectorState.STOPPED);
@@ -137,7 +136,7 @@ public class SinkOssTest extends BaseConnectorTest {
         getConnectorResult = client.getConnector(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         Assert.assertEquals(getConnectorResult.getState(), ConnectorState.STOPPED);
 
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             Assert.assertEquals(entry.getState(), ConnectorShardState.STOPPED);
         }
@@ -145,7 +144,7 @@ public class SinkOssTest extends BaseConnectorTest {
         ConnectorOffset offset = new ConnectorOffset() {{ setSequence(10); setTimestamp(1000);}};
         client.updateConnectorOffset(TEST_PROJECT_NAME, tupleTopicName, connectorType, null, offset);
 
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             Assert.assertEquals(entry.getCurrSequence(), 10);
             Assert.assertEquals(entry.getCurrTimestamp(), 1000);
@@ -165,10 +164,10 @@ public class SinkOssTest extends BaseConnectorTest {
         client.putRecords(TEST_PROJECT_NAME, tupleTopicName, recordEntries);
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         // check sealed state
-        getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (Map.Entry<String, ConnectorShardStatusEntry> entrySet : getConnectorShardStatusResult.getStatusEntryMap().entrySet()) {
             if (entrySet.getKey().equals("0")) {
                 Assert.assertEquals(entrySet.getValue().getState(), ConnectorShardState.FINISHED);
@@ -204,10 +203,10 @@ public class SinkOssTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
 
         long sinkCount = 0;
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (ConnectorShardStatusEntry entry : getConnectorShardStatusResult.getStatusEntryMap().values()) {
             sinkCount = sinkCount + entry.getCurrSequence() + 1;
         }
@@ -397,9 +396,9 @@ public class SinkOssTest extends BaseConnectorTest {
         Assert.assertEquals(putRecordsResult.getFailedRecordCount(), 0);
 
         // wait for sink
-        waitForAllShardSinked(MAX_SINK_TIMEOUT);
+        waitForAllShardSinked(tupleTopicName, MAX_SINK_TIMEOUT);
         long total = 0L;
-        GetConnectorShardStatusResult getConnectorShardStatusResult = ((DatahubClientJsonImpl)client).getConnectorShardStatusNotForUser(TEST_PROJECT_NAME, tupleTopicName, connectorType);
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT_NAME, tupleTopicName, connectorType);
         for (Map.Entry<String, ConnectorShardStatusEntry> entrySet : getConnectorShardStatusResult.getStatusEntryMap().entrySet()) {
             Assert.assertEquals(entrySet.getValue().getState(), ConnectorShardState.EXECUTING);
             Assert.assertEquals(entrySet.getValue().getDiscardCount(), 0);

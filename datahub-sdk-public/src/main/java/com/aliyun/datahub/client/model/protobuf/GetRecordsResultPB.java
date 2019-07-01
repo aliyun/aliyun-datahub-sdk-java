@@ -1,5 +1,6 @@
 package com.aliyun.datahub.client.model.protobuf;
 
+import com.aliyun.datahub.client.http.converter.BaseProtobufModel;
 import com.aliyun.datahub.client.model.GetRecordsResult;
 import com.aliyun.datahub.client.model.RecordEntry;
 import com.aliyun.datahub.client.model.RecordSchema;
@@ -8,10 +9,15 @@ import com.google.protobuf.Message;
 import java.util.ArrayList;
 import java.util.List;
 
-public class GetRecordsResultPB extends GetRecordsResult {
+public class GetRecordsResultPB extends GetRecordsResult implements BaseProtobufModel {
     private DatahubProtos.GetRecordsResponse proto;
     private RecordSchema schema;
     private String shardId;
+
+    @Override
+    public Message getMessage() {
+        return null;
+    }
 
     @Override
     public void setMessage(Message message) {

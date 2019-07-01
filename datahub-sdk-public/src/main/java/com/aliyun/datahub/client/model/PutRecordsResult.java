@@ -1,11 +1,10 @@
 package com.aliyun.datahub.client.model;
 
-import com.aliyun.datahub.client.http.provider.protobuf.BaseProtobufModel;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
-public class PutRecordsResult extends BaseProtobufModel {
+public class PutRecordsResult extends BaseResult {
     @JsonProperty("FailedRecordCount")
     private int failedRecordCount;
 

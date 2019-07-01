@@ -52,8 +52,8 @@ public class ConnectorExample extends BaseExample {
         GetConnectorResult getDataConnectorResult = client.getConnector(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ODPS);
 
         // get connector shard task
-        ConnectorShardStatusEntry getDataConnectorShardStatusResult =
-                client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ODPS, "0");
+        GetConnectorShardStatusResult getDataConnectorShardStatusResult =
+                client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ODPS);
 
         // get connector done time, only for odps
         GetConnectorDoneTimeResult getDataConnectorDoneTimeResult =
@@ -92,7 +92,7 @@ public class ConnectorExample extends BaseExample {
         GetConnectorResult getDataConnectorResult = client.getConnector(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS);
 
         // get connector shard status
-        ConnectorShardStatusEntry getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS, "0");
+        GetConnectorShardStatusResult getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS);
 
         // stop connecator
         UpdateConnectorStateResult updateConnectorStateResult = client.updateConnectorState(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS, ConnectorState.STOPPED);
@@ -102,7 +102,7 @@ public class ConnectorExample extends BaseExample {
                 new ConnectorOffset(){{ setTimestamp(10); setSequence(100);}});
 
         // get connector shard status
-        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS, "0");
+        getConnectorShardStatusResult = client.getConnectorShardStatus(TEST_PROJECT, TEST_TOPIC_TUPLE, ConnectorType.SINK_ADS);
 
 
         // start connector

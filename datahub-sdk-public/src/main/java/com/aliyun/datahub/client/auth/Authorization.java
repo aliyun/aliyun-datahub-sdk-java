@@ -2,14 +2,12 @@ package com.aliyun.datahub.client.auth;
 
 import com.aliyun.datahub.client.common.DatahubConstant;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpHeaders;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import javax.ws.rs.core.HttpHeaders;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 
 public abstract class Authorization {
     private static final String DEFAULT_ENCODING = "UTF-8";
@@ -17,13 +15,15 @@ public abstract class Authorization {
 
     static public String getAkAuthorization(Request request) {
         String canonicalURL = getCanonicalURI(request.getUrlPath());
-        String canonicalQueryString = getCanonicalQueryString(request.getQueryStrings());
+        String canonicalQueryString = request.getQueryStrings();
         String canonicalHeaderString = getCanonicalHeaders(
                 getSortedHeadersToSign(request.getHeaders()));
 
         String canonicalRequest = request.getMethod().toUpperCase() + "\n" +
-                canonicalHeaderString + "\n" +
-                canonicalURL + (canonicalQueryString.length() > 0 ? "?" + canonicalQueryString : "");
+                canonicalHeaderString + "\n" + canonicalURL;
+        if (!StringUtils.isEmpty(canonicalQueryString)) {
+            canonicalRequest += "?" + canonicalQueryString;
+        }
 
         String signature = HMAC1Sign(request.getAccessKey(), canonicalRequest);
 
@@ -68,38 +68,40 @@ public abstract class Authorization {
         return urlPath;
     }
 
-    static private String getCanonicalQueryString(Map<String, String> queryStrings) {
-        SortedMap<String, String> sortedQuery = new TreeMap<String, String>();
-        for (Map.Entry<String, String> entry : queryStrings.entrySet()) {
-            sortedQuery.put(entry.getKey(), entry.getValue());
-        }
+//    static private String getCanonicalQueryString(Map<String, String> queryStrings) {
+//        SortedMap<String, String> sortedQuery = new TreeMap<String, String>();
+//        for (Map.Entry<String, String> entry : queryStrings.entrySet()) {
+//            sortedQuery.put(entry.getKey(), entry.getValue());
+//        }
+//
+//        StringBuilder sb = new StringBuilder();
+//        Iterator<Map.Entry<String, String>> pairs = sortedQuery.entrySet().iterator();
+//        while (pairs.hasNext()) {
+//            Map.Entry<String, String> pair = pairs.next();
+//            sb.append(pair.getKey());
+//            if (pair.getValue() != null && pair.getValue().length() > 0) {
+//                sb.append("=");
+//                sb.append(pair.getValue());
+//            }
+//
+//            if (pairs.hasNext()) {
+//                sb.append("&");
+//            }
+//        }
+//        return sb.toString();
+//    }
 
-        StringBuilder sb = new StringBuilder();
-        Iterator<Map.Entry<String, String>> pairs = sortedQuery.entrySet().iterator();
-        while (pairs.hasNext()) {
-            Map.Entry<String, String> pair = pairs.next();
-            sb.append(pair.getKey());
-            if (pair.getValue() != null && pair.getValue().length() > 0) {
-                sb.append("=");
-                sb.append(pair.getValue());
-            }
-
-            if (pairs.hasNext()) {
-                sb.append("&");
-            }
-        }
-        return sb.toString();
-    }
-
-    static private SortedMap<String,String> getSortedHeadersToSign(Map<String, String> headers) {
+    static private SortedMap<String,String> getSortedHeadersToSign(Map<String, List<String>> headers) {
         SortedMap<String, String> sortedHeaders = new TreeMap<String, String>();
 
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
             String lowerKey = entry.getKey().toLowerCase();
             if (lowerKey.equalsIgnoreCase(HttpHeaders.CONTENT_TYPE) ||
                     lowerKey.equalsIgnoreCase(HttpHeaders.DATE) ||
                     lowerKey.startsWith(DatahubConstant.X_DATAHUB_PREFIX)) {
-                sortedHeaders.put(lowerKey, entry.getValue());
+                if (!entry.getValue().isEmpty()) {
+                    sortedHeaders.put(lowerKey, entry.getValue().get(0));
+                }
             }
         }
 
@@ -115,8 +117,8 @@ public abstract class Authorization {
         private String accessKey;
         private String urlPath;
         private String method;
-        private Map<String, String> headers;
-        private Map<String, String> queryStrings;
+        private Map<String, List<String>> headers;
+        private String queryStrings;
 
         public String getAccessId() {
             return accessId;
@@ -154,20 +156,20 @@ public abstract class Authorization {
             return this;
         }
 
-        public Map<String, String> getHeaders() {
+        public Map<String, List<String>> getHeaders() {
             return headers;
         }
 
-        public Request setHeaders(Map<String, String> headers) {
+        public Request setHeaders(Map<String, List<String>> headers) {
             this.headers = headers;
             return this;
         }
 
-        public Map<String, String> getQueryStrings() {
+        public String getQueryStrings() {
             return queryStrings;
         }
 
-        public Request setQueryStrings(Map<String, String> queryStrings) {
+        public Request setQueryStrings(String queryStrings) {
             this.queryStrings = queryStrings;
             return this;
         }

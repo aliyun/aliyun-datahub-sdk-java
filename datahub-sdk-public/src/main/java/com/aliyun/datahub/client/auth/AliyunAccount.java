@@ -1,10 +1,10 @@
 package com.aliyun.datahub.client.auth;
 
 import com.aliyun.datahub.client.common.DatahubConstant;
-import com.aliyun.datahub.client.http.HttpRequest;
+import okhttp3.Request;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpHeaders;
 
-import javax.ws.rs.core.HttpHeaders;
 import java.util.Objects;
 
 /**
@@ -32,20 +32,16 @@ public class AliyunAccount implements Account {
     }
 
     @Override
-    public void addAuthHeaders(HttpRequest request) {
+    public void addAuthHeaders(Request.Builder reqBuilder) {
         if (securityToken != null) {
-            request.header(DatahubConstant.X_DATAHUB_SECURITY_TOKEN, securityToken);
+            reqBuilder.addHeader(DatahubConstant.X_DATAHUB_SECURITY_TOKEN, securityToken);
         }
 
         // Authorization must be last
         if (isNeedAuth()) {
-            request.header(HttpHeaders.AUTHORIZATION, signer.genAuthSignature(request));
+            Request copyRequest = reqBuilder.build();
+            reqBuilder.addHeader(HttpHeaders.AUTHORIZATION, signer.genAuthSignature(copyRequest));
         }
-    }
-
-    @Override
-    public String genAuthSignature(HttpRequest request) {
-        return isNeedAuth() ? signer.genAuthSignature(request) : null;
     }
 
     private boolean isNeedAuth() {

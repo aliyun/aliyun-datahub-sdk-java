@@ -53,4 +53,12 @@ public class Configure {
 
         return Integer.parseInt(value.trim());
     }
+
+    public static boolean getBoolean(String key, boolean defaultValue) {
+        String value =  properties.getProperty(key);
+        if (value == null || value.length() == 0) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
+    }
 }

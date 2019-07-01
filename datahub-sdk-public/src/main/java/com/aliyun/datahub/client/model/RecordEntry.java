@@ -18,7 +18,7 @@ public class RecordEntry {
 
     private long systemTime;
 
-    private long sequence;
+    private long sequence = -1;
 
     @JsonProperty("Cursor")
     private String cursor;

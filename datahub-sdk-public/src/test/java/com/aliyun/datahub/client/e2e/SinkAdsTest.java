@@ -29,6 +29,7 @@ public class SinkAdsTest extends SinkMysqlTest {
             setDatabase(Configure.getString(Constant.ADS_DATABASE));
             setTable(tupleTopicName);
         }};
+        enableDecimal = Configure.getBoolean(Constant.ADS_ENABLE_DECIMAL, false);
     }
 
     @Override
@@ -81,8 +82,8 @@ public class SinkAdsTest extends SinkMysqlTest {
     }
 
     @Override
-    protected void waitForAllShardSinked(long timeout) {
-        super.waitForAllShardSinked(timeout);
+    protected void waitForAllShardSinked(String topicName, long timeout) {
+        super.waitForAllShardSinked(topicName, timeout);
         sleepInMs(MAX_WAIT_ADS_META_TIME);
     }
 

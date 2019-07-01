@@ -1,205 +1,198 @@
 package com.aliyun.datahub.client.http;
 
 import com.aliyun.datahub.client.auth.Account;
-import com.aliyun.datahub.client.http.compress.lz4.LZ4EncoderFilter;
-import com.aliyun.datahub.client.http.compress.lz4.LZ4EncoderInterceptor;
-import com.aliyun.datahub.client.http.interceptor.AuthInterceptor;
-import com.aliyun.datahub.client.http.interceptor.MetricInterceptor;
-import com.aliyun.datahub.client.http.provider.JsonContextProvider;
-import com.aliyun.datahub.client.http.provider.ProtobufMessageProvider;
-import org.apache.http.config.Registry;
-import org.apache.http.config.RegistryBuilder;
-import org.apache.http.conn.socket.ConnectionSocketFactory;
-import org.apache.http.conn.socket.PlainConnectionSocketFactory;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.glassfish.jersey.apache.connector.ApacheClientProperties;
-import org.glassfish.jersey.apache.connector.ApacheConnectorProvider;
-import org.glassfish.jersey.client.ClientConfig;
-import org.glassfish.jersey.client.ClientProperties;
-import org.glassfish.jersey.client.RequestEntityProcessing;
-import org.glassfish.jersey.client.filter.EncodingFilter;
-import org.glassfish.jersey.filter.LoggingFilter;
-import org.glassfish.jersey.jackson.JacksonFeature;
-import org.glassfish.jersey.message.DeflateEncoder;
-import org.glassfish.jersey.message.GZipEncoder;
+import com.aliyun.datahub.client.http.converter.EmptyBodyConverterFactory;
+import com.aliyun.datahub.client.http.converter.ProtobufConverterFactory;
+import com.aliyun.datahub.client.http.interceptor.InterceptorWrapper;
+import com.aliyun.datahub.client.http.interceptor.compress.DeflateRequestInterceptor;
+import com.aliyun.datahub.client.http.interceptor.compress.Lz4RequestInterceptor;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.*;
+import okhttp3.logging.HttpLoggingInterceptor;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import retrofit2.Retrofit;
+import retrofit2.converter.jackson.JacksonConverterFactory;
 
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 public abstract class HttpClient {
-    private static final Logger LOGGER = Logger.getLogger(HttpClient.class.getName());
-    private static Map<ClientInfo, Client> clientMap = new HashMap<>();
-    private static ScheduledExecutorService executorService = new ScheduledThreadPoolExecutor(1);
-    private static ScheduledFuture<?> fTask;
+    private final static Logger LOGGER = LoggerFactory.getLogger(HttpClient.class);
+    private static ConnectionPool connectionPool;
+    private static int maxIdleConnections = 3;
+
+    private static ObjectMapper DEFAULT_MAPPER;
+    private static Map<ClientConfig, Retrofit> clientMap = new HashMap<>();
 
     static {
-        fTask = executorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                for (Client client : clientMap.values()) {
-                    PoolingHttpClientConnectionManager connManager = (PoolingHttpClientConnectionManager) client
-                            .getConfiguration().getProperty(ApacheClientProperties.CONNECTION_MANAGER);
-                    connManager.closeExpiredConnections();
-                }
-            }
-        }, 500, 10000, TimeUnit.MILLISECONDS);
+        DEFAULT_MAPPER = new ObjectMapper();
+        DEFAULT_MAPPER.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        DEFAULT_MAPPER.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        DEFAULT_MAPPER.enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+    }
+
+    public static Retrofit createClient(String endpoint, HttpConfig config) {
+        return createClient(endpoint, config, new InterceptorWrapper());
     }
 
     public static void close() {
-        fTask.cancel(true);
-        executorService.shutdown();
-
-        for (Client client : clientMap.values()) {
-            PoolingHttpClientConnectionManager poolMngr = (PoolingHttpClientConnectionManager) client.getConfiguration()
-                    .getProperty(ApacheClientProperties.CONNECTION_MANAGER);
-            poolMngr.close();
+        if (connectionPool != null) {
+            connectionPool.evictAll();
         }
     }
 
-    public static HttpRequest createRequest(String endpoint, HttpConfig config) {
-        return createRequest(endpoint, config, new HttpInterceptor());
-    }
-
-    public static HttpRequest createRequest(String endpoint, HttpConfig config, HttpInterceptor interceptor) {
+    public static Retrofit createClient(String endpoint, HttpConfig config, InterceptorWrapper wrapper) {
         if (!endpoint.startsWith("http")) {
             endpoint = "http://" + endpoint;
         }
+        if (!endpoint.endsWith("/")) {
+            endpoint += "/";
+        }
 
-        ClientInfo clientInfo = new ClientInfo(config, interceptor.getAccount());
-        Client client = clientMap.get(clientInfo);
-        if (client == null) {
+        ClientConfig clientConfig = new ClientConfig(endpoint, config, wrapper.getAuth().getAccount());
+        Retrofit retrofit = clientMap.get(clientConfig);
+        if (retrofit == null) {
             synchronized (HttpClient.class) {
-                client = clientMap.get(clientInfo);
-                if (client == null) {
-                    client = createClient(config, interceptor.getAccount());
-                    clientMap.put(clientInfo, client);
+                retrofit = clientMap.get(clientConfig);
+                if (retrofit == null) {
+                    retrofit = newClient(endpoint, config, wrapper);
+                    clientMap.put(clientConfig, retrofit);
                 }
             }
         }
-
-        return new HttpRequest(client)
-                .endpoint(endpoint)
-                .interceptor(interceptor)
-                .maxRetryCount(config.getMaxRetryCount());
+        return retrofit;
     }
 
-    private static Client createClient(HttpConfig config, Account account) {
-        ClientConfig clientConfig = getClientConfig(config);
-        Client client = ClientBuilder.newBuilder()
-                .withConfig(clientConfig)
+    private static Retrofit newClient(String endpoint, HttpConfig config, InterceptorWrapper wrapper) {
+        return new Retrofit.Builder()
+                .client(buildClient(config, wrapper))
+                .addConverterFactory(EmptyBodyConverterFactory.create())
+                .addConverterFactory(ProtobufConverterFactory.create(config.isEnablePbCrc()))
+                .addConverterFactory(JacksonConverterFactory.create(DEFAULT_MAPPER))
+                .baseUrl(endpoint)
                 .build();
+    }
 
-        client.property(ClientProperties.REQUEST_ENTITY_PROCESSING, RequestEntityProcessing.BUFFERED);
-        client.property(ClientProperties.READ_TIMEOUT, config.getReadTimeout());
-        client.property(ClientProperties.CONNECT_TIMEOUT, config.getConnTimeout());
-        client.property(ClientProperties.SUPPRESS_HTTP_COMPLIANCE_VALIDATION, true);
+    private static OkHttpClient buildClient(HttpConfig config, InterceptorWrapper wrapper) {
+        if (connectionPool == null) {
+            connectionPool = new ConnectionPool(maxIdleConnections, 60, TimeUnit.SECONDS);
+        }
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .connectionPool(connectionPool)
+                .readTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)
+                .writeTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)
+                .connectTimeout(config.getConnTimeout(), TimeUnit.MILLISECONDS)
+                .sslSocketFactory(sslSocketFactory(), x509TrustManager())
+                .addInterceptor(wrapper.getResponse());
 
-        if (config.getProxyUri() != null && !config.getProxyUri().isEmpty()) {
-            client.property(ClientProperties.PROXY_URI, config.getProxyUri());
-            client.property(ClientProperties.PROXY_USERNAME, config.getProxyUsername());
-            client.property(ClientProperties.PROXY_PASSWORD, config.getProxyPassword());
+        if (config.isEnableH2C()) {
+            builder.protocols(Collections.singletonList(Protocol.H2_PRIOR_KNOWLEDGE));
         }
 
-        client.register(new JacksonFeature())
-                .register(JsonContextProvider.class);
-        client.register(new ProtobufMessageProvider(config.isEnablePbCrc()));
-
-        // As raw-size is needed for auth, so should auth request in interceptor
-        client.register(new AuthInterceptor(account), Priorities.AUTH);
-
-        // register encoders
-        if (config.getCompressType() != null) {
-            if (config.getCompressType() == HttpConfig.CompressType.LZ4) {
-                client.register(LZ4EncoderInterceptor.class, Priorities.ENCODER);
-                client.register(LZ4EncoderFilter.class);
-            } else {
-                client.register(DeflateEncoder.class, Priorities.ENCODER);
-                client.register(GZipEncoder.class, Priorities.ENCODER);
-                client.register(EncodingFilter.class);
-                client.property(ClientProperties.USE_ENCODING, config.getCompressType().getValue());
-            }
+        if (config.getCompressType() == HttpConfig.CompressType.DEFLATE) {
+            builder.addInterceptor(new DeflateRequestInterceptor());
+        } else if (config.getCompressType() == HttpConfig.CompressType.LZ4) {
+            builder.addInterceptor(new Lz4RequestInterceptor());
         }
 
-        // for metric tps
-        client.register(new MetricInterceptor(), Priorities.METRIC);
+        builder.addInterceptor(wrapper.getAuth());
+
+        if (!StringUtils.isEmpty(config.getProxyUri())) {
+            String proxyUri = config.getProxyUri();
+            int index = proxyUri.lastIndexOf(":");
+            String proxyHost = proxyUri.substring(0, index);
+            String proxyPortStr = proxyUri.substring(index + 1);
+            int proxyPort = StringUtils.isEmpty(proxyPortStr) ? 80 : Integer.valueOf(proxyPortStr);
+            builder.proxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort)))
+                    .proxyAuthenticator(new Authenticator() {
+                        @Override
+                        public Request authenticate(Route route, Response response) throws IOException {
+                            String credential = Credentials.basic(config.getProxyUsername(), proxyHost);
+                            return response.request().newBuilder()
+                                    .header("Proxy-Authorization", credential)
+                                    .build();
+                        }
+                    });
+        }
 
         if (config.isDebugRequest()) {
-            client.register(new LoggingFilter(LOGGER, true));
+            builder.addInterceptor(loggingInterceptor());
         }
 
-        return client;
+        return builder.build();
     }
 
-    private static ClientConfig getClientConfig(HttpConfig config) {
-        ClientConfig clientConfig = new ClientConfig();
-        clientConfig.connectorProvider(new ApacheConnectorProvider());
-        PoolingHttpClientConnectionManager connectionManager =
-                new PoolingHttpClientConnectionManager(
-                        getSocketFactoryRegistry(),
-                        null,
-                        null,
-                        null,
-                        60,
-                        TimeUnit.SECONDS);
-
-        connectionManager.setMaxTotal(config.getMaxConnTotal());
-        connectionManager.setDefaultMaxPerRoute(config.getMaxConnPerRoute());
-        clientConfig.property(ApacheClientProperties.CONNECTION_MANAGER, connectionManager);
-        return clientConfig;
+    private static HttpLoggingInterceptor loggingInterceptor() {
+        HttpLoggingInterceptor.Logger CUSTOM = new HttpLoggingInterceptor.Logger() {
+            @Override
+            public void log(String message) {
+                LOGGER.info("DataHubClient: " + message);
+            }
+        };
+        HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor(CUSTOM);
+        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        return loggingInterceptor;
     }
 
-
-    private static Registry<ConnectionSocketFactory> getSocketFactoryRegistry() {
-        TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager(){
-            public void checkClientTrusted(X509Certificate[] arg0, String arg1)
-                    throws CertificateException {
+    private static X509TrustManager x509TrustManager() {
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
             }
-            public void checkServerTrusted(X509Certificate[] arg0, String arg1)
-                    throws CertificateException {
+            @Override
+            public void checkServerTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
             }
+            @Override
             public X509Certificate[] getAcceptedIssuers() {
                 return new X509Certificate[0];
             }
-        }};
-
-        SSLContext sslContext;
-        try {
-            sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-        } catch (java.security.GeneralSecurityException ex) {
-            LOGGER.warning(ex.toString());
-            throw new RuntimeException(ex.getMessage(), ex);
-        }
-
-        SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(sslContext, NoopHostnameVerifier.INSTANCE);
-        return RegistryBuilder.<ConnectionSocketFactory>create()
-                .register("http", PlainConnectionSocketFactory.INSTANCE)
-                .register("https", sslsf)
-                .build();
+        };
     }
 
-    private static class ClientInfo {
+    private static SSLSocketFactory sslSocketFactory() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[]{x509TrustManager()}, new SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (GeneralSecurityException ex) {
+            LOGGER.warn(ex.toString());
+            throw new RuntimeException(ex.getMessage(), ex);
+        }
+    }
+
+    public static int getMaxIdleConnections() {
+        return maxIdleConnections;
+    }
+
+    public static void setMaxIdleConnections(int maxIdleConnections) {
+        HttpClient.maxIdleConnections = maxIdleConnections;
+    }
+
+    private static class ClientConfig {
+        private String endpoint;
         private HttpConfig config;
         private Account account;
 
-        public ClientInfo(HttpConfig config, Account account) {
+        public ClientConfig(String endpoint, HttpConfig config, Account account) {
+            this.endpoint = endpoint;
             this.config = config;
             this.account = account;
         }
@@ -208,14 +201,15 @@ public abstract class HttpClient {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            ClientInfo that = (ClientInfo) o;
-            return Objects.equals(config, that.config) &&
+            ClientConfig that = (ClientConfig) o;
+            return Objects.equals(endpoint, that.endpoint) &&
+                    Objects.equals(config, that.config) &&
                     Objects.equals(account, that.account);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(config, account);
+            return Objects.hash(endpoint, config, account);
         }
     }
 }
